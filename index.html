@@ -28,6 +28,11 @@ html{scroll-padding-top:16px}body{padding-bottom:calc(110px + env(safe-area-inse
 .ticker,#services,#how-it-works,.closing{display:none}#request{border-top:1px solid var(--line);padding:28px 0 40px}.contact-intro{display:none}.contact-layout{display:block}.request-form{padding:22px 16px;border-radius:12px}.request-form h3{font-size:24px}.form-caption{font-size:14px}.fields{grid-template-columns:1fr;gap:19px}.field{grid-column:1/-1}label{font-size:14px}input,select,textarea{font-size:16px;min-height:50px;padding:13px 12px}textarea{min-height:110px}.location-box strong,.media-box strong{font-size:15px}.location-box p,.media-box p,.location-status,.file-list,.consent label,.privacy{font-size:12px}.location-box .btn{min-height:50px;font-size:16px}.consent{grid-template-columns:24px 1fr;gap:12px}.consent input{width:24px;height:24px}.request-form>.btn{min-height:56px;font-size:17px}.faq summary{font-size:14px;line-height:1.4}.faq details p{font-size:13px}.mobile-cta .call-button{min-height:60px;border-radius:9px}.mobile-cta .call-button strong{font-size:19px}.mobile-cta .call-button small{font-size:14px}
 }
 @media(max-width:360px){.hero-logo{max-height:124px;width:200px}.hero h1{font-size:25px;margin-bottom:14px}.hero-actions .call-button{min-height:76px}.hero-actions .btn{min-height:52px}.hero-actions .request-option{min-height:60px}}
+/* Logo-free card artwork, with a portrait version for phone screens. */
+body{isolation:isolate;background:#090c0b}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background-image:linear-gradient(#0002,#0002),url("assets/card-background.webp");background-size:100% 100%;background-position:center;background-repeat:no-repeat}
+.service-card{background:#101813e8}.request-form{background:#0b130fe8}.how{background:#0b130fd9}footer{background:#080d0caa}
+@media(max-width:760px){body::before{background-image:linear-gradient(#0002,#0002),url("assets/card-background-mobile.webp")}.hero{padding-top:18px}.mobile-cta{background:#080d0cdb;backdrop-filter:blur(6px)}}
 </style>
 </head>
 <body>
