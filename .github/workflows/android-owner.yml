@@ -64,7 +64,7 @@ jobs:
           script: |
             adb install -r /tmp/owner-release/universal.apk
             adb install -r -t android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-            adb shell am instrument -w -r com.swaggdaddys.owner.test/androidx.test.runner.AndroidJUnitRunner > apk-output/device-tests.txt
+            adb shell am instrument -w -r com.swaggdaddysmobile.test/androidx.test.runner.AndroidJUnitRunner > apk-output/device-tests.txt
             cat apk-output/device-tests.txt
             python -c "from pathlib import Path; result = Path('apk-output/device-tests.txt').read_text(); assert 'OK (2 tests)' in result and 'FAILURES!!!' not in result, result"
       - name: Package unsigned release and signing verifier
