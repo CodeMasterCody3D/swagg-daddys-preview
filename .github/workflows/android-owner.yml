@@ -49,13 +49,12 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: |
-            cd android
-            gradle --no-daemon connectedDebugAndroidTest
+            gradle -p android --no-daemon connectedDebugAndroidTest
             adb shell am start -n com.swaggdaddys.owner/.MainActivity
             sleep 4
-            mkdir -p ../apk-output
+            mkdir -p apk-output
             adb shell screencap -p /sdcard/owner-login.png
-            adb pull /sdcard/owner-login.png ../apk-output/owner-login.png
+            adb pull /sdcard/owner-login.png apk-output/owner-login.png
       - name: Package unsigned release and signing verifier
         if: success()
         run: |
