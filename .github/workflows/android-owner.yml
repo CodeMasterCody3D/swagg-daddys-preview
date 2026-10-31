@@ -43,7 +43,7 @@ jobs:
           cp android/app/build/outputs/bundle/release/app-release.aab apk-output/swagg-daddys-owner-unsigned.aab
           java -jar apk-output/bundletool.jar validate --bundle=apk-output/swagg-daddys-owner-unsigned.aab
           java -jar apk-output/bundletool.jar dump manifest --bundle=apk-output/swagg-daddys-owner-unsigned.aab > apk-output/bundle-manifest.xml
-          java -jar apk-output/bundletool.jar build-apks --bundle=apk-output/swagg-daddys-owner-unsigned.aab --output=/tmp/owner-release.apks --mode=universal
+          java -jar apk-output/bundletool.jar build-apks --bundle=apk-output/swagg-daddys-owner-unsigned.aab --output=/tmp/owner-release.apks --mode=universal --ks="$HOME/.android/debug.keystore" --ks-key-alias=androiddebugkey --ks-pass=pass:android --key-pass=pass:android
           python -c "import zipfile; zipfile.ZipFile('/tmp/owner-release.apks').extract('universal.apk', '/tmp/owner-release')"
       - name: Enable emulator acceleration
         run: |
