@@ -14,13 +14,17 @@ Owner authentication protects the backend. A simple wrapper is not app attestati
 
 ## Build
 
-Use JDK 17, Gradle 8.11.1, Android SDK 35, build-tools 35.0.0, and Android Gradle Plugin 8.9.2. From the repository root, run `python android/scripts/make-icon.py` with Pillow installed, then run these commands in `android/`:
+Use JDK 17, Gradle 8.11.1, Android SDK 36, build-tools 36.0.0, and Android Gradle Plugin 8.9.2. From the repository root, run `python android/scripts/make-icon.py` with Pillow installed, then run these commands in `android/`:
 
 ```sh
-gradle testDebugUnitTest assembleRelease
+gradle testDebugUnitTest bundleRelease assembleRelease
 gradle connectedDebugAndroidTest
 ```
 
-The GitHub Actions workflow builds an unsigned release APK, tests navigation rules, and runs Android 15 emulator checks against the logged-out live owner page. The device test never signs in or submits a customer request. Sign the unsigned release with the retained private signing key using Android's apksigner before distribution. Reuse that key and increase versionCode for future updates. Do not commit any signing keys or passwords.
+The GitHub Actions workflow builds an unsigned release AAB and APK, tests navigation rules, validates the AAB with Google's checksum-verified bundletool, and runs Android 16 emulator checks against an APK generated from the release bundle. The device test never signs in or submits a customer request. The generated test APK uses the disposable Android debug certificate; it is not a distribution artifact.
+
+For Google Play, sign `app/build/outputs/bundle/release/app-release.aab` with the retained private key using JDK `jarsigner`, then verify its signature and validate it with bundletool. Upload the signed **.aab** in Play Console's App bundles section. An **.apk** is for direct installation and is not an app-bundle upload. The current bundle targets API 36 and uses version code 2 (version 1.0.1).
+
+For direct installation, sign the unsigned release APK with Android's `apksigner`. Reuse the retained key and increase versionCode for future updates. Do not commit any signing keys or passwords. Google Play App Signing can use a different distribution certificate from the upload certificate; an APK installed directly can only update in place when its signing certificate matches the distributed update.
 
 The app loads the live website, so ordinary inbox improvements do not require reinstalling the APK. A physical-device check of the phone's chosen dialer/SMS/Maps applications remains necessary after installation.

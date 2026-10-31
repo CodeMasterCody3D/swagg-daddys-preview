@@ -29,40 +29,48 @@ jobs:
           gradle-version: '8.11.1'
       - name: Prepare SDK and launcher icon
         run: |
-          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
           python -m pip install --quiet Pillow
           python android/scripts/make-icon.py
-      - name: Test navigation and assemble APKs
+      - name: Test navigation and build release bundle and APKs
         working-directory: android
-        run: gradle --no-daemon testDebugUnitTest assembleRelease assembleDebug assembleDebugAndroidTest
+        run: gradle --no-daemon testDebugUnitTest bundleRelease assembleRelease assembleDebug assembleDebugAndroidTest
+      - name: Validate bundle and generate release test APK
+        run: |
+          mkdir -p apk-output
+          curl --fail --location --retry 3 https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar --output apk-output/bundletool.jar
+          echo 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  apk-output/bundletool.jar' | sha256sum --check
+          cp android/app/build/outputs/bundle/release/app-release.aab apk-output/swagg-daddys-owner-unsigned.aab
+          java -jar apk-output/bundletool.jar validate --bundle=apk-output/swagg-daddys-owner-unsigned.aab
+          java -jar apk-output/bundletool.jar dump manifest --bundle=apk-output/swagg-daddys-owner-unsigned.aab > apk-output/bundle-manifest.xml
+          java -jar apk-output/bundletool.jar build-apks --bundle=apk-output/swagg-daddys-owner-unsigned.aab --output=/tmp/owner-release.apks --mode=universal
+          python -c "import zipfile; zipfile.ZipFile('/tmp/owner-release.apks').extract('universal.apk', '/tmp/owner-release')"
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Android 15 device smoke tests
+      - name: Android 16 smoke tests against bundle-generated release APK
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 36
           target: google_apis
           arch: x86_64
           profile: pixel_6
           disable-animations: true
           script: |
-            gradle -p android --no-daemon connectedDebugAndroidTest
-            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-            adb shell am start -n com.swaggdaddys.owner/.MainActivity
-            sleep 4
-            mkdir -p apk-output
-            adb shell screencap -p /sdcard/owner-login.png
-            adb pull /sdcard/owner-login.png apk-output/owner-login.png
+            adb install -r /tmp/owner-release/universal.apk
+            adb install -r android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell am instrument -w -r com.swaggdaddys.owner.test/androidx.test.runner.AndroidJUnitRunner > apk-output/device-tests.txt
+            cat apk-output/device-tests.txt
+            python -c "from pathlib import Path; result = Path('apk-output/device-tests.txt').read_text(); assert 'OK (2 tests)' in result and 'FAILURES!!!' not in result, result"
       - name: Package unsigned release and signing verifier
         if: success()
         run: |
           mkdir -p apk-output
           cp android/app/build/outputs/apk/release/app-release-unsigned.apk apk-output/swagg-daddys-owner-unsigned.apk
-          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" apk-output/apksigner.jar
-          sha256sum apk-output/*.apk apk-output/apksigner.jar > apk-output/SHA256SUMS.txt
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" apk-output/apksigner.jar
+          sha256sum apk-output/*.apk apk-output/*.aab apk-output/*.jar > apk-output/SHA256SUMS.txt
       - name: Upload build and device evidence
         if: always()
         uses: actions/upload-artifact@v4
