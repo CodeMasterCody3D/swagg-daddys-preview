@@ -1,7 +1,8 @@
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual, createHash } from 'node:crypto';
+import { randomBytes, scrypt as scryptCallback, pbkdf2 as pbkdf2Callback, timingSafeEqual, createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 
 const scrypt = promisify(scryptCallback);
+const pbkdf2 = promisify(pbkdf2Callback);
 export const digest = value => createHash('sha256').update(value).digest('hex');
 export const token = () => randomBytes(32).toString('hex');
 export const COOKIE = '__Host-swagg_session';
@@ -15,10 +16,15 @@ export async function hashPassword(password) {
 }
 
 export function configured(env) {
-  return /^scrypt:[a-f0-9]{32}:[a-f0-9]{128}$/.test(env.OWNER_PASSWORD_HASH || '');
+  return /^(?:scrypt:[a-f0-9]{32}:[a-f0-9]{128}|pbkdf2:600000:[a-f0-9]{32}:[a-f0-9]{64})$/.test(env.OWNER_PASSWORD_HASH || '');
 }
 
 export async function verifyPassword(password, encoded) {
+  if (encoded.startsWith('pbkdf2:')) {
+    const [, iterations, salt, expected] = encoded.split(':');
+    const actual = await pbkdf2(password, salt, Number(iterations), 32, 'sha256');
+    return timingSafeEqual(actual, Buffer.from(expected, 'hex'));
+  }
   const [, salt, expected] = encoded.split(':');
   const actual = await scrypt(password, salt, 64);
   return timingSafeEqual(actual, Buffer.from(expected, 'hex'));

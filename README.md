@@ -6,7 +6,7 @@ The customer site keeps its logo, card artwork, large Call Now button, Text Me l
 
 ## Owner inbox
 
-- Password login with no public signup. Verification runs on the server using scrypt.
+- Password login with no public signup. Verification runs on the server using scrypt or PBKDF2-SHA256.
 - Customer list, search, status filter, private notes, and job status: New, Contacted, Scheduled, In progress, Completed, Cancelled.
 - Tap a customer's number or Call button to open a `tel:` link. Android chooses a compatible dialer; Google Voice availability depends on the device. The future wrapper must handle telephone and SMS links with Android intents, using `ACTION_DIAL` for calls rather than placing calls automatically.
 - GPS links open the shared vehicle location in Maps. Customers may decline GPS and enter an area instead.
@@ -18,8 +18,8 @@ The customer site keeps its logo, card artwork, large Call Now button, Text Me l
 GitHub Pages serves static assets only. Netlify runs the functions and supplies private, durable Netlify Blobs storage. Production data survives deployments. Preview deployments use isolated stores. No customer data, sessions, or credentials are written to this repository or the static publish directory.
 
 1. Connect **this repository** to the existing Netlify project for `swaggdaddys.com`, deploying `main`. Use `netlify.toml`: build `npm run build`, publish `public`, functions `netlify/functions`, Node 22. Manual static drag-and-drop alone cannot deploy the backend; use the Git integration or Netlify CLI with functions.
-2. On a trusted computer with Node 22+, run `npm ci`, then `npm run owner-password`. Enter a unique owner password at its hidden prompt, at least 14 characters. Keep the actual password private. The command outputs a salted hash.
-3. In the existing project's Netlify environment variables, set **OWNER_PASSWORD_HASH** to the complete generated `scrypt:...` value and **OWNER_USERNAME** to the desired login name (default `owner`). Scope the hash to Functions and Production and store it as a secret. Do not commit a real password or its hash. Redeploy to apply the variables.
+2. Open `/owner/password-helper.html` over HTTPS to choose a unique password of at least 14 characters. The helper derives a PBKDF2-SHA256 value with 600,000 iterations locally; the actual password is never sent by the helper. Alternatively, on a trusted computer with Node 22+, run `npm ci`, then `npm run owner-password` to produce a scrypt hash at a hidden prompt.
+3. In the existing project's Netlify environment variables, set **OWNER_PASSWORD_HASH** to the complete generated value and **OWNER_USERNAME** to the desired login name (default `owner`). Scope the hash to Functions and Production where the plan supports scoping, and store it as a secret. Do not commit a real password or its hash. Redeploy to apply the variables.
 4. Open `https://swaggdaddys.com/owner/`, sign in, and submit an explicitly marked test request. Verify it appears, attachments load, changes persist, and signing out blocks access. Local checks do not replace this first deployed check.
 
 `site-config.js` contains only the public backend origin. It connects the GitHub Pages intake to the custom domain and redirects GitHub owner access to the same-origin Netlify dashboard. The production form uses its own `/api` origin. Additional customer-form origins can be supplied in the server-only PUBLIC_SITE_ORIGINS environment variable as a comma-separated allowlist.
