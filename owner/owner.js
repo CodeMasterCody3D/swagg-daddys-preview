@@ -62,21 +62,27 @@ async function openCustomer(id) {
     $('customer-dialog').showModal(); notice('');
     for (const file of item.media) {
       const box = el('div', undefined, 'attachment'); const button = el('button', 'Load ' + file.name, 'button secondary compact'); box.append(button); $('attachments').append(box);
-      button.addEventListener('click', async () => {
+      const loadAttachment = async () => {
         button.disabled = true;
+        button.textContent = 'Loading ' + file.name + '…';
         try {
           const response = await fetch(apiBase + '/requests/' + item.id + '/media/' + file.id, { credentials:'same-origin', cache:'no-store' });
           if (response.status === 401) { signedOut(); throw new Error('Please sign in again.'); }
           if (!response.ok) throw new Error('Attachment could not be loaded.');
           const blob = await response.blob();
-          if (active?.id !== item.id || !$('customer-dialog').open) return;
+          if (active?.id !== item.id || !$('customer-dialog').open || !box.isConnected) return;
           const url = URL.createObjectURL(blob); objectUrls.push(url);
           const link = el('a', 'Download ' + file.name); link.href = url; link.download = file.name; box.replaceChildren(link);
           const media = el(file.type.startsWith('image/') ? 'img' : 'video'); media.src=url;
-          if (media.tagName === 'VIDEO') { media.controls = true; media.playsInline = true; } else media.alt = file.name;
+          if (media.tagName === 'VIDEO') { media.controls = true; media.playsInline = true; } else { media.alt = file.name; media.loading = 'eager'; }
           box.append(media);
-        } catch (error) { button.disabled = false; button.textContent = 'Retry loading attachment'; $('detail-notice').textContent = error.message; }
-      });
+        } catch (error) {
+          if (active?.id !== item.id || !box.isConnected) return;
+          button.disabled = false; button.textContent = 'Retry loading attachment'; $('detail-notice').textContent = error.message;
+        }
+      };
+      button.addEventListener('click', loadAttachment);
+      if (file.type.startsWith('image/')) void loadAttachment();
     }
   } catch (error) { notice(error.message, true); }
 }
