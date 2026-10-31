@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.res.ColorStateList;
+import android.text.InputType;
 import android.graphics.Color;
 import android.graphics.Insets;
 import android.net.Uri;
@@ -24,6 +25,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
@@ -31,6 +33,7 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.window.OnBackInvokedDispatcher;
+import org.json.JSONTokener;
 
 /** A small owner-only website wrapper. Passwords and customer records stay on the website. */
 public final class MainActivity extends Activity {
@@ -217,13 +220,56 @@ public final class MainActivity extends Activity {
         menu.getMenu().add(0, 1, 0, "Owner inbox");
         menu.getMenu().add(0, 2, 1, "Refresh");
         menu.getMenu().add(0, 3, 2, "Open in browser");
+        menu.getMenu().add(0, 4, 3, "Text service upload link");
         menu.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == 1) loadOwner(NavigationPolicy.HOME);
             else if (item.getItemId() == 2) loadOwner(retryUrl);
+            else if (item.getItemId() == 4) prepareUploadText();
             else openExternal(new Intent(Intent.ACTION_VIEW, Uri.parse(NavigationPolicy.HOME)));
             return true;
         });
         menu.show();
+    }
+
+    private void prepareUploadText() {
+        web.evaluateJavascript("(() => { const d = document.getElementById('customer-dialog'); const a = document.getElementById('call-customer'); return d && d.open && a ? a.getAttribute('href') : null; })()", result -> {
+            if (destroyed || isFinishing()) return;
+            String currentNumber = "";
+            try {
+                Object value = new JSONTokener(result).nextValue();
+                if (value instanceof String && ((String) value).startsWith("tel:")) {
+                    currentNumber = ((String) value).substring(4);
+                }
+            } catch (Exception ignored) { }
+            EditText phone = new EditText(this);
+            phone.setInputType(InputType.TYPE_CLASS_PHONE);
+            phone.setHint("Customer phone number");
+            phone.setSingleLine(true);
+            phone.setText(currentNumber);
+            LinearLayout box = new LinearLayout(this);
+            box.setPadding(dp(22), dp(8), dp(22), 0);
+            box.addView(phone, new LinearLayout.LayoutParams(-1, -2));
+            AlertDialog dialog = new AlertDialog.Builder(this)
+                    .setTitle("Text service upload link")
+                    .setMessage("Open a text with the link for photos, video, and vehicle location.")
+                    .setView(box).setNegativeButton("Cancel", null)
+                    .setPositiveButton("Open text message", null).create();
+            dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                    .setOnClickListener(button -> {
+                        String number = phone.getText().toString().replaceAll("[ ()\\-.]", "");
+                        if (NavigationPolicy.classify("sms:" + number) != NavigationPolicy.Route.TEXT) {
+                            phone.setError("Enter a valid customer phone number.");
+                            return;
+                        }
+                        String text = "Hi, this is Swagg Daddys. Please share your vehicle details, a photo or short video, and your location here: https://swaggdaddys.com/#request";
+                        Intent intent = new Intent(Intent.ACTION_SENDTO,
+                                Uri.parse("smsto:" + number));
+                        intent.putExtra("sms_body", text);
+                        openExternal(intent);
+                        dialog.dismiss();
+                    }));
+            dialog.show();
+        });
     }
 
     private boolean route(String url, boolean mainFrame) {

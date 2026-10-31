@@ -6,6 +6,9 @@ on:
     paths: ['android/**', '.github/workflows/android-owner.yml']
 permissions:
   contents: read
+concurrency:
+  group: android-owner-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   android:
     runs-on: ubuntu-latest
