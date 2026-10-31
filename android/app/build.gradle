@@ -13,6 +13,19 @@ android {
         versionName '1.0.1'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
+    signingConfigs {
+        debug {
+            // A disposable CI key also signs the bundle-derived APK for instrumentation.
+            def ciKey = System.getenv('SWAGG_CI_TEST_KEYSTORE')
+            if (ciKey) {
+                storeFile file(ciKey)
+                storeType 'PKCS12'
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
