@@ -1,9 +1,12 @@
 import { getStore } from '@netlify/blobs';
 
-export function netlifyStore(env = process.env) {
+export function netlifyStore(context, openStore = getStore) {
   // Preview and development deployments must never read the production inbox.
-  const suffix = env.CONTEXT === 'production' ? 'production' : `preview-${env.DEPLOY_ID || 'local'}`;
-  const data = getStore({ name: `swagg-inbox-${suffix}`, consistency: 'strong' });
+  // CONTEXT and DEPLOY_ID are build variables, not guaranteed runtime variables.
+  const deploy = context?.deploy;
+  if (!deploy?.id || !deploy?.context) throw new Error('Missing trusted deployment context');
+  const suffix = deploy.context === 'production' ? 'production' : `preview-${deploy.id}`;
+  const data = openStore({ name: `swagg-inbox-${suffix}`, consistency: 'strong' });
   return {
     async get(key) {
       const result = await data.getWithMetadata(key, { type: 'json' });
