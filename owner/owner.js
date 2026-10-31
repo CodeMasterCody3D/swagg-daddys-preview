@@ -1,0 +1,113 @@
+const $ = id => document.getElementById(id);
+let csrf = '', items = [], next = null, active = null, statuses = [], objectUrls = [];
+const github = location.hostname.endsWith('github.io');
+const backend = window.SWAGG_CONFIG?.backendOrigin || '';
+const configuredOrigin = (() => { try { const u = new URL(backend); return u.protocol === 'https:' ? u.origin : ''; } catch { return ''; } })();
+const apiBase = github ? (configuredOrigin ? configuredOrigin + '/api' : null) : '/api';
+function notice(message = '', error = false) { $('notice').textContent = message; $('notice').classList.toggle('error', error); }
+function show(id) { ['signin','inbox','unavailable'].forEach(name => $(name).hidden = name !== id); }
+function clearMedia() { objectUrls.forEach(url => URL.revokeObjectURL(url)); objectUrls = []; $('attachments').replaceChildren(); }
+function signedOut() { csrf = ''; items = []; active = null; next = null; clearMedia(); $('cards').replaceChildren(); $('customer-dialog').close(); $('password').value = ''; show('signin'); }
+async function api(path, options = {}) {
+  const response = await fetch(apiBase + path, { ...options, credentials: 'same-origin', cache: 'no-store', headers: { ...(options.body ? { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf } : {}), ...options.headers } });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) { if (response.status === 401) signedOut(); throw new Error(data.error || 'The request could not be completed.'); }
+  return data;
+}
+function el(tag, value, className) { const node = document.createElement(tag); if (value !== undefined) node.textContent = value; if (className) node.className = className; return node; }
+function contactLink(number, kind = 'tel') { return `${kind}:${number.replace(/[^+0-9]/g, '')}`; }
+function shortDate(date) { return new Date(date).toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
+function render() {
+  const query = $('search').value.trim().toLowerCase(); const filter = $('status-filter').value;
+  const visible = items.filter(item => (!filter || item.status === filter) && (!query || [item.name,item.phone,item.vehicle,item.location].join(' ').toLowerCase().includes(query)));
+  $('cards').replaceChildren();
+  for (const customer of visible) {
+    const card = el('article', undefined, 'customer'); const top = el('div', undefined, 'customer-heading');
+    const name = el('button', customer.name, 'customer-name'); name.type='button'; name.addEventListener('click', () => openCustomer(customer.id)); top.append(name);
+    top.append(el('span', customer.status, 'badge')); card.append(top, el('p', customer.vehicle), el('p', customer.issue));
+    const phone = el('a', customer.phone, 'phone'); phone.href = contactLink(customer.dialNumber); phone.setAttribute('aria-label', `Call ${customer.name} at ${customer.phone}`); card.append(phone);
+    const urgent = customer.urgency.startsWith('Urgent'); card.append(el('span', customer.urgency.split(' — ')[0], 'badge' + (urgent ? ' urgent' : '')));
+    const bottom = el('div', undefined, 'customer-bottom'); bottom.append(el('span', shortDate(customer.createdAt), 'small'));
+    const view = el('button', 'View request', 'button secondary compact'); view.addEventListener('click', () => openCustomer(customer.id)); bottom.append(view); card.append(bottom); $('cards').append(card);
+  }
+  $('empty').hidden = visible.length > 0; $('empty').textContent = items.length ? 'No requests match your search.' : 'No requests yet. New service requests will appear here.';
+  $('count').textContent = '(' + items.length + (next ? '+' : '') + ')'; $('load-more').hidden = !next;
+  $('stats').replaceChildren();
+  for (const [label,value] of [['New', items.filter(i => i.status === 'New').length], ['Active', items.filter(i => ['Contacted','Scheduled','In progress'].includes(i.status)).length], ['Completed', items.filter(i => i.status === 'Completed').length]]) {
+    const stat = el('div', undefined, 'stat'); stat.append(el('strong', String(value)), el('span', label + (next ? ' · loaded' : ''))); $('stats').append(stat);
+  }
+}
+async function load(older = false) {
+  $('refresh').disabled = true; $('load-more').disabled = true;
+  try {
+    const data = await api('/requests' + (older && next ? '?before=' + encodeURIComponent(next) : ''));
+    items = older ? [...new Map([...items,...data.items].map(i => [i.id,i])).values()] : data.items; next = data.next;
+    if (!statuses.length) { statuses = data.statuses; for (const status of statuses) { $('status-filter').append(new Option(status, status)); $('job-status').append(new Option(status, status)); } }
+    show('inbox'); render(); notice('');
+  } catch (error) { notice(error.message, true); }
+  finally { $('refresh').disabled = false; $('load-more').disabled = false; }
+}
+function fact(label, value) { const row = el('div', undefined, 'fact'); row.append(el('strong', label), typeof value === 'string' ? el('p', value) : value); $('customer-facts').append(row); }
+async function openCustomer(id) {
+  notice('Loading customer…');
+  try {
+    const item = await api('/requests/' + id); active = item; clearMedia(); $('customer-facts').replaceChildren();
+    $('customer-title').textContent = item.name; $('customer-vehicle').textContent = item.vehicle;
+    $('call-customer').href = contactLink(item.dialNumber); $('call-customer').textContent = 'Call ' + item.phone;
+    $('text-customer').href = contactLink(item.dialNumber, 'sms');
+    fact('Requested', shortDate(item.createdAt)); fact('Urgency', item.urgency); fact('Issue', item.issue); fact('Location', item.location);
+    if (item.gps) { const map = el('a', 'Open vehicle location in Maps'); map.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(item.gps.latitude + ',' + item.gps.longitude); map.target='_blank'; map.rel='noopener noreferrer'; fact('Shared GPS', map); }
+    fact('Customer details', item.details || 'No additional details.');
+    $('job-status').value = item.status; $('owner-notes').value = item.notes || ''; $('detail-notice').textContent = ''; $('detail-notice').classList.remove('error');
+    $('customer-dialog').showModal(); notice('');
+    for (const file of item.media) {
+      const box = el('div', undefined, 'attachment'); const button = el('button', 'Load ' + file.name, 'button secondary compact'); box.append(button); $('attachments').append(box);
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+          const response = await fetch(apiBase + '/requests/' + item.id + '/media/' + file.id, { credentials:'same-origin', cache:'no-store' });
+          if (response.status === 401) { signedOut(); throw new Error('Please sign in again.'); }
+          if (!response.ok) throw new Error('Attachment could not be loaded.');
+          const blob = await response.blob();
+          if (active?.id !== item.id || !$('customer-dialog').open) return;
+          const url = URL.createObjectURL(blob); objectUrls.push(url);
+          const link = el('a', 'Download ' + file.name); link.href = url; link.download = file.name; box.replaceChildren(link);
+          const media = el(file.type.startsWith('image/') ? 'img' : 'video'); media.src=url;
+          if (media.tagName === 'VIDEO') { media.controls = true; media.playsInline = true; } else media.alt = file.name;
+          box.append(media);
+        } catch (error) { button.disabled = false; button.textContent = 'Retry loading attachment'; $('detail-notice').textContent = error.message; }
+      });
+    }
+  } catch (error) { notice(error.message, true); }
+}
+$('login-form').addEventListener('submit', async event => {
+  event.preventDefault(); $('sign-in-button').disabled = true; notice('Signing in…');
+  try { const data = await api('/login', { method:'POST', body:JSON.stringify({ username:$('username').value, password:$('password').value }) }); csrf = data.csrf; $('password').value = ''; await load(); }
+  catch (error) { notice(error.message, true); }
+  finally { $('sign-in-button').disabled = false; }
+});
+$('sign-out').addEventListener('click', async () => { try { await api('/logout', { method:'POST', body:'{}' }); signedOut(); notice('Signed out.'); } catch (error) { notice(error.message, true); } });
+$('refresh').addEventListener('click', () => load()); $('load-more').addEventListener('click', () => load(true));
+$('search').addEventListener('input', render); $('status-filter').addEventListener('change', render);
+$('close-detail').addEventListener('click', () => $('customer-dialog').close());
+$('customer-dialog').addEventListener('close', () => { clearMedia(); active = null; $('customer-facts').replaceChildren(); $('owner-notes').value = ''; });
+$('update-form').addEventListener('submit', async event => {
+  event.preventDefault(); if (!active) return; $('save-job').disabled = true;
+  try {
+    const updated = await api('/requests/' + active.id, { method:'PATCH', body:JSON.stringify({ status:$('job-status').value, notes:$('owner-notes').value, revision:active.revision }) });
+    active = updated; items = items.map(i => i.id === updated.id ? updated : i); render(); $('detail-notice').textContent='Changes saved.'; $('detail-notice').classList.remove('error');
+  } catch (error) { $('detail-notice').textContent=error.message; $('detail-notice').classList.add('error'); }
+  finally { $('save-job').disabled=false; }
+});
+async function init() {
+  // Keep owner authentication same-origin: avoids cross-site cookies in Android WebView.
+  if (github && configuredOrigin) { location.replace(configuredOrigin + '/owner/'); return; }
+  if (!apiBase) { show('unavailable'); notice('Secure hosting is not connected yet.'); return; }
+  try {
+    const health = await api('/health');
+    if (!health.ready) { show('unavailable'); notice('Owner sign-in has not been activated yet.'); return; }
+    try { const auth = await api('/session'); csrf=auth.csrf; await load(); }
+    catch (error) { show('signin'); notice(error.message === 'Please sign in.' ? '' : error.message); }
+  } catch { show('unavailable'); notice('Secure hosting is not connected yet.'); }
+}
+init();

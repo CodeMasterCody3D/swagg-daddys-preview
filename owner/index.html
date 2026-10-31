@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#080d0c">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Owner inbox · Swagg Daddys</title>
+  <link rel="icon" href="../assets/swagg-daddys-logo-transparent.webp">
+  <link rel="stylesheet" href="owner.css">
+  <script src="../site-config.js" defer></script>
+  <script src="owner.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <img src="../assets/swagg-daddys-logo-transparent.webp" alt="Swagg Daddys Mobile Mechanics" width="180" height="114">
+      <div><p class="eyebrow">ALWAYS ROLLIN.</p><h1>Owner inbox</h1><p class="muted">Your customers. Your next move.</p></div>
+    </header>
+    <p id="notice" class="notice" role="status" aria-live="polite">Checking owner access…</p>
+    <section id="unavailable" class="panel" hidden>
+      <h2>Owner inbox is being connected</h2>
+      <p>The secure service needs to be activated before owner sign-in and saved requests are available.</p>
+      <p>Your public call and text buttons still work.</p>
+      <a class="button secondary" href="../">Back to the website</a>
+    </section>
+    <section id="signin" class="panel signin" hidden>
+      <p class="eyebrow">PRIVATE OWNER ACCESS</p><h2>Welcome back.</h2>
+      <p class="muted">Sign in to view service requests.</p>
+      <form id="login-form">
+        <label for="username">Username</label><input id="username" name="username" autocomplete="username" value="owner" maxlength="100" required>
+        <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required>
+        <button class="button" id="sign-in-button" type="submit">Sign in</button>
+      </form>
+      <p class="small muted">Owner access only. There is no public account signup.</p>
+    </section>
+    <section id="inbox" hidden>
+      <div class="toolbar"><h2>Service requests <span id="count" class="count"></span></h2><div class="toolbar-actions"><button class="button secondary compact" id="refresh">Refresh</button><button class="button secondary compact" id="sign-out">Sign out</button></div></div>
+      <div class="filters"><div><label for="search">Find a customer</label><input id="search" type="search" placeholder="Name, phone, vehicle…" autocomplete="off"></div><div><label for="status-filter">Status</label><select id="status-filter"><option value="">All statuses</option></select></div></div>
+      <div class="stats" id="stats"></div>
+      <div id="cards" class="cards"></div>
+      <p id="empty" class="panel empty" hidden>No requests yet. New service requests will appear here.</p>
+      <button id="load-more" class="button secondary more" hidden>Load older requests</button>
+    </section>
+    <p class="footnote">Swagg Daddys · Owner access</p>
+  </main>
+  <dialog id="customer-dialog" aria-labelledby="customer-title">
+    <div class="dialog-top"><p class="eyebrow">SERVICE REQUEST</p><button id="close-detail" class="close" aria-label="Close customer details">×</button></div>
+    <h2 id="customer-title"></h2><p id="customer-vehicle" class="muted"></p>
+    <div class="contact-actions"><a id="call-customer" class="button call">Call customer</a><a id="text-customer" class="button secondary">Text customer</a></div>
+    <p class="small muted">Tap Call to open your phone’s dialer with the number ready.</p>
+    <div id="customer-facts" class="facts"></div>
+    <div id="attachments" class="attachments"></div>
+    <form id="update-form"><label for="job-status">Job status</label><select id="job-status"></select><label for="owner-notes">Private notes</label><textarea id="owner-notes" rows="4" maxlength="4000" placeholder="Appointment details, parts needed, or next steps…"></textarea><button id="save-job" class="button" type="submit">Save changes</button></form>
+    <p id="detail-notice" role="status" aria-live="polite" class="small"></p>
+  </dialog>
+</body>
+</html>
