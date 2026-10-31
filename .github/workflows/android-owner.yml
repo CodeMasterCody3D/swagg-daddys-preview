@@ -50,6 +50,7 @@ jobs:
           disable-animations: true
           script: |
             gradle -p android --no-daemon connectedDebugAndroidTest
+            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
             adb shell am start -n com.swaggdaddys.owner/.MainActivity
             sleep 4
             mkdir -p apk-output
