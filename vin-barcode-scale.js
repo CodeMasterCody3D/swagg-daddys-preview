@@ -8,6 +8,7 @@ function cubic(value) {
 export function scaleBarcodePixels(source,width,height) {
   const sw=source.width,sh=source.height;
   if(![sw,sh,width,height].every(n=>Number.isInteger(n)&&n>0)||source.data.length!==sw*sh*4||width*height>5000000)throw new Error('Invalid barcode image size.');
+  if(sw===width&&sh===height)return {data:new Uint8ClampedArray(source.data),width,height};
   const output=new Uint8ClampedArray(width*height*4);
   const indexes=new Int32Array(width*4),weights=new Float32Array(width*4);
   for(let x=0;x<width;x++) {

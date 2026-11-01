@@ -1,5 +1,14 @@
 export const normalizeVin = value => String(value || '').toUpperCase().replace(/[\s*\-]/g, '');
 export const validVin = value => /^[A-HJ-NPR-Z0-9]{17}$/.test(value);
+// North American check digit; a mismatch is advisory because other markets differ.
+export function vinCheckDigit(value) {
+  const vin=normalizeVin(value);if(!validVin(vin))return {status:'invalid'};
+  const values={A:1,B:2,C:3,D:4,E:5,F:6,G:7,H:8,J:1,K:2,L:3,M:4,N:5,P:7,R:9,S:2,T:3,U:4,V:5,W:6,X:7,Y:8,Z:9};
+  const weights=[8,7,6,5,4,3,2,10,0,9,8,7,6,5,4,3,2];
+  const sum=[...vin].reduce((total,c,i)=>total+(values[c]??Number(c))*weights[i],0),remainder=sum%11;
+  const expected=remainder===10?'X':String(remainder);
+  return {status:vin[8]===expected?'match':'mismatch',expected,actual:vin[8]};
+}
 export function vinCandidates(value) {
   const candidates = new Set();
   // Keep lines separate so surrounding label text cannot become part of a VIN.

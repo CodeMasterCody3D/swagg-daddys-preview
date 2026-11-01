@@ -1,6 +1,7 @@
 import { normalizeVin, validVin, specFields } from '../vin-core.js';
 import { randomUUID } from 'node:crypto';
 import { findManuals, manualResponse } from './manuals.mjs';
+import { createVehicleResearch } from './vehicle-research.mjs';
 import { LensReadError, MAX_LENS_PHOTO_BYTES, readGoogleVinPhoto } from './lens.mjs';
 import { configured, cookieValue, digest, sessionCookie, SESSION_MS, token, verifyPassword } from './auth.mjs';
 
@@ -52,7 +53,7 @@ function validMedia(bytes, mime) {
 }
 
 // The adapter uses conditional writes, so rate limits and owner edits are safe across function instances.
-export function createApi({ store, env = process.env, now = Date.now, lensReader = readGoogleVinPhoto }) {
+export function createApi({ store, env = process.env, now = Date.now, lensReader = readGoogleVinPhoto, research = createVehicleResearch() }) {
   async function throttle(key, limit, windowMs) {
     for (let attempt = 0; attempt < 6; attempt++) {
       const entry = await store.get('limits/' + key);
@@ -208,6 +209,13 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
 
       const auth = await session(request);
       if (route === '/session' && request.method === 'GET') return json({ username: env.OWNER_USERNAME || 'owner', csrf: auth.csrf });
+      const researchMatch=route.match(/^\/vehicles\/([A-HJ-NPR-Z0-9]{17})\/research$/);
+      const researchDetail=route.match(/^\/research\/(safety|economy)\/(\d{1,8})$/);
+      if((researchMatch||researchDetail)&&request.method==='GET') {
+        await throttle('research-'+digest(auth.key),30,60*1000);
+        try {return json(researchMatch?await research.lookup(researchMatch[1]):await research.detail(researchDetail[1],researchDetail[2]));}
+        catch {return json({error:'Vehicle research is unavailable right now. Check the VIN and try again, or use the provider links.'},502);}
+      }
       if (['POST','PATCH','DELETE','PUT'].includes(request.method)) {
         sameOrigin(request);
         if (request.headers.get('x-csrf-token') !== auth.csrf) fail(403, 'Please reload the dashboard and try again.');

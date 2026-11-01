@@ -9,7 +9,7 @@
   <link rel="icon" href="../assets/swagg-daddys-logo-transparent.webp">
   <link rel="stylesheet" href="owner.css">
   <script src="../site-config.js" defer></script>
-  <script src="owner.js" defer></script>
+  <script src="owner.js" type="module"></script>
 </head>
 <body>
   <main class="shell">
@@ -35,14 +35,17 @@
       <p class="small muted">Owner access only. There is no public account signup.</p>
     </section>
     <section id="inbox" hidden>
-      <section id="owner-tools" class="panel" aria-labelledby="owner-tools-title">
+      <nav class="owner-tabs" aria-label="Owner sections"><button id="requests-tab" type="button" class="button compact" aria-pressed="true" aria-controls="requests-view">Requests</button><button id="tools-tab" type="button" class="button secondary compact" aria-pressed="false" aria-controls="owner-tools">Tools</button></nav>
+      <section id="owner-tools" class="panel" aria-labelledby="owner-tools-title" hidden>
         <h2 id="owner-tools-title">Tools</h2>
         <p class="muted">Repair references for your next job.</p>
         <h3>Operation CHARM</h3>
         <p>Free vehicle repair manuals. Choose the make, year, and model to find service information.</p>
         <a class="button secondary" href="https://charm.li/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open repair manuals ↗</a>
         <p class="small muted">Opens an external website. Customer details are not included in this link.</p>
+        <details class="job-tools"><summary>Vehicle research · VIN, recalls, ratings and history checks</summary><div id="vehicle-research"></div></details>
       </section>
+      <section id="requests-view" aria-label="Service requests">
       <div class="toolbar"><h2><span id="inbox-title">Service requests</span> <span id="count" class="count"></span></h2><div class="toolbar-actions"><button class="button secondary compact" id="refresh">Refresh</button><button class="button secondary compact" id="sign-out">Sign out</button></div></div>
       <div class="view-switch"><label for="inbox-view">Show</label><select id="inbox-view"><option value="active">Active requests</option><option value="trash">Trash</option></select></div>
       <div class="filters"><div><label for="search">Find a customer</label><input id="search" type="search" placeholder="Name, phone, vehicle, VIN…" autocomplete="off"></div><div><label for="status-filter">Status</label><select id="status-filter"><option value="">All statuses</option></select></div></div>
@@ -50,6 +53,7 @@
       <div id="cards" class="cards"></div>
       <p id="empty" class="panel empty" hidden>No requests yet. New service requests will appear here.</p>
       <button id="load-more" class="button secondary more" hidden>Load older requests</button>
+      </section>
     </section>
     <p class="footnote">Swagg Daddys · Owner access · <a href="../privacy.html">Privacy policy</a></p>
   </main>

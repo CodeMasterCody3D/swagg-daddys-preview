@@ -1,5 +1,6 @@
 import { photoCanvas } from './vin-scan.js';
 import { readVinPhoto } from './vin-reader.js';
+import { createLiveVinScanner, cameraErrorMessage } from './vin-live.js';
 import { normalizeVin, validVin, decodedVehicle } from './vin-core.js';
 
 const $ = id => document.getElementById(id);
@@ -12,6 +13,7 @@ function showBarcodeCheck(check) {
   $('vin-barcode-details').textContent=check?[
     'Reader check: '+check.version,
     'Photo: '+check.width+' × '+check.height,
+    ...(check.liveFrames?['Barcode attempts: '+check.liveFrames]:[]),
     'Passes: '+(check.passes.join(' → ')||'none completed'),
     ...check.symbols.map(symbol=>symbol.format+': '+symbol.text),
     'Result: '+(check.status==='read'?'VIN barcode decoded':check.status==='unavailable'?'Barcode reader could not run':'No complete VIN barcode decoded'),
@@ -19,6 +21,9 @@ function showBarcodeCheck(check) {
   ].filter(Boolean).join('\n'):'';
 }
 let timer, revision = 0, abort, scanBusy = false;
+let liveScanner;
+function liveUi(open){$('vin-live-tools').hidden=!open;$('vin-photo-button').setAttribute('aria-expanded',String(open));$('vin-photo-button').disabled=open&&Boolean(liveScanner?.active);$('vin-live-capture').disabled=!liveScanner?.active;}
+function stopLive(message=''){liveScanner?.stop();liveUi(false);if(message){restoreVinStatus();status.textContent=message;}}
 let lensApi='/api';
 if(location.hostname.endsWith('github.io')) {
   try {const endpoint=new URL(window.SWAGG_CONFIG?.backendOrigin);if(endpoint.protocol==='https:')lensApi=endpoint.origin+'/api';}catch{}
@@ -40,6 +45,7 @@ function clearDecode() {
   $('request-result').hidden=true;
 }
 input.addEventListener('input', () => {
+  stopLive();
   scanSource.textContent='';
   showBarcodeCheck();
   clearTimeout(timer); clearDecode(); input.value=normalizeVin(input.value); input.setCustomValidity('');
@@ -71,7 +77,7 @@ async function decode() {
     if (current===revision) status.textContent=error.name==='AbortError'?'Lookup timed out. Try again or enter the vehicle manually.':error.message;
   } finally { clearTimeout(timeout); if (current===revision) lookup.disabled=false; }
 }
-lookup.addEventListener('click',decode);
+lookup.addEventListener('click',()=>{stopLive();void decode();});
 // Camera capture and existing photos share the barcode-first reader.
 let sourcePhoto=null, crop=null, cropStart=null, scanId=0;
 const preview=$('vin-photo-preview');
@@ -121,6 +127,7 @@ async function readPhoto() {
 }
 async function selectPhoto(event) {
   const file=event.target.files[0];if(!file||scanBusy)return;
+  stopLive();
   restoreVinStatus();
   event.target.value='';
   if(file.size>25*1024*1024||!file.type.startsWith('image/')){status.textContent='Choose a photo under 25 MB, or enter the VIN manually.';return;}
@@ -132,19 +139,37 @@ async function selectPhoto(event) {
   } catch(error){status.textContent=error.message;}
   finally {scanBusy=false;for(const id of ['vin-photo-button','vin-upload-button','vin-retry','vin-clear-photo'])$(id).disabled=false;}
 }
-$('vin-photo-button').addEventListener('click',()=>$('vin-photo').click());
-$('vin-upload-button').addEventListener('click',()=>$('vin-upload').click());
+liveScanner=createLiveVinScanner({video:$('vin-live-video'),onSample:info=>{$('vin-live-progress').textContent='Camera: '+info.width+' × '+info.height+' · Frames sampled: '+info.samples+' · Barcode attempts: '+info.attempts+' · Local text checks: '+info.textAttempts;},onFrame:(result,{frames,samples,textAttempts})=>{if(result.diagnostics)showBarcodeCheck({...result.diagnostics,liveFrames:frames});$('vin-live-progress').textContent='Frames sampled: '+samples+' · Barcode attempts: '+frames+' · Local text checks: '+textAttempts;},onStatus:message=>{if($('vin-live-status').textContent!==message)$('vin-live-status').textContent=message;},onMatch:(vin,result)=>{liveUi(false);showBarcodeCheck({...result.diagnostics,liveFrames:barcodeCheck?.liveFrames});applyScannedVin(vin,result.candidates?.[0]?.method==='text'?'live-text':'live-barcode');},onError:error=>{liveUi(true);$('vin-photo-button').disabled=false;$('vin-live-capture').disabled=true;$('vin-live-status').textContent=cameraErrorMessage(error);}});
+$('vin-photo-button').addEventListener('click',async()=>{
+  if(scanBusy)return;
+  clearPhoto();scanSource.textContent='';showBarcodeCheck();$('vin-live-progress').textContent='Waiting for camera frames. Barcode first; local text checks start if needed.';liveUi(true);
+  if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){$('vin-live-status').textContent='This browser cannot show an in-page camera here. Use the phone camera button below, choose a photo, or open this website in your phone’s browser.';return;}
+  $('vin-photo-button').disabled=true;$('vin-live-capture').disabled=true;
+  await liveScanner.start();if(liveScanner.active)$('vin-live-capture').disabled=false;
+});
+$('vin-live-stop').addEventListener('click',()=>stopLive('Camera stopped. You can start a new live scan or choose a VIN photo.'));
+$('vin-camera-fallback').addEventListener('click',()=>{stopLive();$('vin-photo').click();});
+$('vin-live-capture').addEventListener('click',async()=>{
+  if(scanBusy||!liveScanner.active)return;
+  try{const frame=liveScanner.capture();stopLive();sourcePhoto=frame;crop=null;drawPhoto();$('vin-photo-tools').hidden=false;$('vin-crop-status').textContent='Photo captured from the live camera. Drag around the VIN if a retry is needed.';await readPhoto();}
+  catch(error){$('vin-live-status').textContent=cameraErrorMessage(error);}
+});
+$('vin-upload-button').addEventListener('click',()=>{stopLive();$('vin-upload').click();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&liveScanner.active)stopLive('Camera stopped while the page was away. Tap Live scan VIN to start again.');});
+window.addEventListener('pagehide',()=>stopLive());
+$('service-form').addEventListener('submit',()=>stopLive());
 $('vin-photo').addEventListener('change',selectPhoto);$('vin-upload').addEventListener('change',selectPhoto);
 $('vin-retry').addEventListener('click',readPhoto);
 function clearPhoto(){restoreVinStatus();scanId++;sourcePhoto=null;crop=null;cropStart=null;preview.width=1;preview.height=1;$('vin-photo-tools').hidden=true;$('vin-candidate').hidden=true;$('vin-raw-text').textContent='';$('vin-recognized').value='';suggestions=[];}
 $('vin-clear-photo').addEventListener('click',()=>{clearPhoto();scanSource.textContent='';showBarcodeCheck();status.textContent='Photo cleared. You can take another photo or type your VIN.';});
 function applyScannedVin(value,method='') {
+  stopLive();
   clearTimeout(timer);
   const vin=normalizeVin(value);
   clearDecode();input.value=vin;clearPhoto();
-  scanSource.textContent=method==='barcode'?'VIN read from the barcode on your device.':method==='google-lens'?(barcodeCheck?.status==='unavailable'?'Google Lens used because the barcode reader could not run.':'VIN read by Google Lens after the barcode checks.'):method==='text'?'VIN read from printed text on your device.':'';
+  scanSource.textContent=method==='live-text'?'VIN read from printed text on your device after barcode retries. Please review every character.':method==='live-barcode'?'VIN read from the live barcode scan on your device.':method==='barcode'?'VIN read from the barcode on your device.':method==='google-lens'?(barcodeCheck?.status==='unavailable'?'Google Lens used because the barcode reader could not run.':'VIN read by Google Lens after the barcode checks.'):method==='text'?'VIN read from printed text on your device.':'';
   if(validVin(vin))void decode();
   else status.textContent='VIN kept as entered. You can enter vehicle details manually or send the request as it is.';
 }
 $('vin-use').addEventListener('click',()=>{const value=$('vin-recognized').value;applyScannedVin(value,suggestions.find(candidate=>candidate.vin===normalizeVin(value))?.method);});
-$('service-form').addEventListener('reset',()=>{clearTimeout(timer);clearDecode();clearPhoto();scanSource.textContent='';showBarcodeCheck();input.setCustomValidity('');status.textContent='';lookup.disabled=false;});
+$('service-form').addEventListener('reset',()=>{stopLive();clearTimeout(timer);clearDecode();clearPhoto();scanSource.textContent='';showBarcodeCheck();input.setCustomValidity('');status.textContent='';lookup.disabled=false;});

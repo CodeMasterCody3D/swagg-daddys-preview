@@ -1,7 +1,15 @@
-import { scannedVins } from './vin-core.js';
+import { scannedVins, vinCheckDigit } from './vin-core.js';
 import { scaleBarcodePixels } from './vin-barcode-scale.js';
 const asset = path => new URL('./vendor/'+path,import.meta.url).href;
 const loaded = new Map();
+let zxingReady;
+async function barcodeEngine(){
+  if(!zxingReady)zxingReady=(async()=>{await loadScript(asset('zxing/reader.js'));await window.ZXingWASM.prepareZXingModule({overrides:{locateFile:path=>asset('zxing/'+path)},fireImmediately:true});return window.ZXingWASM;})().catch(error=>{zxingReady=null;throw error;});
+  return zxingReady;
+}
+// Start the existing local engine while the camera permission/preview opens.
+// A failed warm-up remains retryable when the first actual frame is read.
+export function prepareVinBarcodeReader(){return barcodeEngine();}
 function loadScript(url) {
   if (!loaded.has(url)) loaded.set(url,new Promise((resolve,reject)=>{
     const script=document.createElement('script'); script.src=url;
@@ -57,12 +65,17 @@ export async function scanVinBarcodes(source,{rectangle=null,progress=()=>{}}={}
   try {
     await loadScript(asset('zxing/reader.js'));
     stage='engine';
-    await window.ZXingWASM.prepareZXingModule({overrides:{locateFile:path=>asset('zxing/'+path)},fireImmediately:true});
-    for(let pass=0;pass<2;pass++) {
-      stage='decode';diagnostics.passes.push(pass?'Cubic scaling':'Standard scaling');
-      if(pass)progress('Retrying VIN barcodes with enhanced image scaling…');
-      const image=pass?cropCanvas(source,rectangle,{highQuality:true}):canvas;
-      const results=await window.ZXingWASM.readBarcodes(image.getContext('2d').getImageData(0,0,image.width,image.height),{formats:['Code39','Code128','Code93','PDF417','DataMatrix','QRCode'],tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:8});
+    const engine=await barcodeEngine();
+    const attempts=[{label:'Standard scaling',image:canvas},{label:'Cubic scaling',rectangle,highQuality:true}];
+    // A long door-label barcode often spans almost the entire picture. Keep
+    // both ends and their quiet zones when isolating the horizontal band.
+    if(!rectangle)attempts.push({label:'Wide barcode band',rectangle:{x:0,y:source.height*.15,width:source.width,height:source.height*.7},highQuality:true});
+    if(!rectangle)for(const fraction of [.6,.4])attempts.push({label:'Center crop '+Math.round(fraction*100)+'%',rectangle:{x:source.width*(1-fraction)/2,y:source.height*.2,width:source.width*fraction,height:source.height*.6},highQuality:true});
+    for(let pass=0;pass<attempts.length;pass++) {
+      const attempt=attempts[pass];stage='decode';diagnostics.passes.push(attempt.label);
+      if(pass)progress('Retrying VIN barcodes — '+attempt.label.toLowerCase()+'…');
+      const image=attempt.image||cropCanvas(source,attempt.rectangle,{highQuality:attempt.highQuality});
+      const results=await engine.readBarcodes(image.getContext('2d').getImageData(0,0,image.width,image.height),{formats:['Code39','Code128','Code93','PDF417','DataMatrix','QRCode'],tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:8});
       for(const result of results) {
         diagnostics.symbols.push({format:result.format,text:result.text.slice(0,160)});
         raw.push('Barcode ('+result.format+'): '+result.text);
@@ -78,6 +91,53 @@ export async function scanVinBarcodes(source,{rectangle=null,progress=()=>{}}={}
   }
   if(candidates.size)diagnostics.status='read';
   return {candidates:[...candidates.values()],rawText:[...new Set(raw)].join('\n'),warnings,diagnostics};
+}
+
+export async function scanVinLiveFrame(source,{enhance=false}={}) {
+  const engine=await barcodeEngine();
+  const symbols=await engine.readBarcodes(source.getContext('2d',{willReadFrequently:true}).getImageData(0,0,source.width,source.height),{formats:['Code39','Code128','Code93','PDF417','DataMatrix','QRCode'],tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:8});
+  const candidates=new Map();for(const symbol of symbols)for(const candidate of scannedVins(symbol.text,{barcode:true}))candidates.set(candidate.vin,{...candidate,method:'barcode'});
+  if(!candidates.size&&enhance)return scanVinBarcodes(source);
+  return {candidates:[...candidates.values()],warnings:[],diagnostics:{version:'live-1',width:source.width,height:source.height,passes:['Live camera frame'],symbols:symbols.map(s=>({format:s.format,text:s.text.slice(0,160)})),status:candidates.size?'read':'no-vin'}};
+}
+
+// Live text is a local fallback, never a Google request. Reuse one worker for
+// the camera session and keep native camera pixels: enlarging these frames can
+// erase fine text detail as well as invent edges around a filmed phone screen.
+export function createLiveVinTextReader() {
+  let ready=null,closed=false;
+  async function worker() {
+    if(closed)throw new Error('Text reader stopped.');
+    if(!ready)ready=(async()=>{
+      await loadScript(asset('tesseract/tesseract.min.js'));
+      return window.Tesseract.createWorker('eng',1,{workerPath:asset('tesseract/worker.min.js'),corePath:asset('tesseract/core'),langPath:asset('tesseract/lang'),gzip:true});
+    })();
+    const value=await ready;if(closed)throw new Error('Text reader stopped.');return value;
+  }
+  return {
+    async read(source) {
+      const reader=await worker(),found=new Map(),raw=[];
+      const image=document.createElement('canvas');
+      const scale=Math.min(1,1280/Math.max(source.width,source.height));
+      image.width=Math.max(1,Math.round(source.width*scale));image.height=Math.max(1,Math.round(source.height*scale));
+      image.getContext('2d').drawImage(source,0,0,image.width,image.height);
+      for(const mode of ['3','6']) {
+        if(closed)throw new Error('Text reader stopped.');
+        await reader.setParameters({tessedit_pageseg_mode:mode,preserve_interword_spaces:'1',user_defined_dpi:'300'});
+        const result=await reader.recognize(image);
+        if(closed)throw new Error('Text reader stopped.');
+        raw.push(result.data.text);
+        for(const candidate of scannedVins(result.data.text)) {
+          if(!candidate.corrected&&vinCheckDigit(candidate.vin).status==='match')found.set(candidate.vin,{...candidate,method:'text'});
+        }
+      }
+      return {candidates:[...found.values()],rawText:raw.join('\n'),warnings:[]};
+    },
+    async close() {
+      if(closed)return;closed=true;
+      if(ready)try{await (await ready).terminate();}catch{}
+    }
+  };
 }
 
 export async function scanVinText(source,{rectangle=null,progress=()=>{}}={}) {
