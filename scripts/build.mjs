@@ -5,4 +5,5 @@ await rm('public', { recursive: true, force: true });
 await mkdir('public');
 for (const name of ['index.html','privacy.html','assets','owner','site-config.js','intake.js','media.js','vin.js','vin-core.js','vin-scan.js','vin-lens.js','vin-reader.js','vin-barcode-scale.js']) await cp(name, 'public/' + name, { recursive: true });
 await scannerAssets();
+await cp('vin-live.js','public/vin-live.js');
 console.log('Built public customer site and owner dashboard.');

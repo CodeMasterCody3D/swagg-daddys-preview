@@ -22,6 +22,7 @@ const lensReader = qa?.mockGoogleLens ? async () => {
 const api = createApi({ store, env, lensReader });
 const publicFiles = new Set(['/index.html','/site-config.js','/intake.js','/media.js','/vin.js','/vin-core.js','/vin-scan.js','/vin-lens.js','/vin-reader.js','/vin-barcode-scale.js','/privacy.html','/owner/index.html','/owner/owner.css','/owner/owner.js']);
 publicFiles.add('/owner/vehicle-research.js');
+publicFiles.add('/vin-live.js');
 const types = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.webp':'image/webp', '.wasm':'application/wasm', '.gz':'application/gzip', '.txt':'text/plain' };
 const root = resolve('.');
 const server = createServer(async (req,res) => {

@@ -2,6 +2,11 @@ import { scannedVins } from './vin-core.js';
 import { scaleBarcodePixels } from './vin-barcode-scale.js';
 const asset = path => new URL('./vendor/'+path,import.meta.url).href;
 const loaded = new Map();
+let zxingReady;
+async function barcodeEngine(){
+  if(!zxingReady)zxingReady=(async()=>{await loadScript(asset('zxing/reader.js'));await window.ZXingWASM.prepareZXingModule({overrides:{locateFile:path=>asset('zxing/'+path)},fireImmediately:true});return window.ZXingWASM;})().catch(error=>{zxingReady=null;throw error;});
+  return zxingReady;
+}
 function loadScript(url) {
   if (!loaded.has(url)) loaded.set(url,new Promise((resolve,reject)=>{
     const script=document.createElement('script'); script.src=url;
@@ -57,12 +62,12 @@ export async function scanVinBarcodes(source,{rectangle=null,progress=()=>{}}={}
   try {
     await loadScript(asset('zxing/reader.js'));
     stage='engine';
-    await window.ZXingWASM.prepareZXingModule({overrides:{locateFile:path=>asset('zxing/'+path)},fireImmediately:true});
+    const engine=await barcodeEngine();
     for(let pass=0;pass<2;pass++) {
       stage='decode';diagnostics.passes.push(pass?'Cubic scaling':'Standard scaling');
       if(pass)progress('Retrying VIN barcodes with enhanced image scaling…');
       const image=pass?cropCanvas(source,rectangle,{highQuality:true}):canvas;
-      const results=await window.ZXingWASM.readBarcodes(image.getContext('2d').getImageData(0,0,image.width,image.height),{formats:['Code39','Code128','Code93','PDF417','DataMatrix','QRCode'],tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:8});
+      const results=await engine.readBarcodes(image.getContext('2d').getImageData(0,0,image.width,image.height),{formats:['Code39','Code128','Code93','PDF417','DataMatrix','QRCode'],tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:8});
       for(const result of results) {
         diagnostics.symbols.push({format:result.format,text:result.text.slice(0,160)});
         raw.push('Barcode ('+result.format+'): '+result.text);
@@ -78,6 +83,14 @@ export async function scanVinBarcodes(source,{rectangle=null,progress=()=>{}}={}
   }
   if(candidates.size)diagnostics.status='read';
   return {candidates:[...candidates.values()],rawText:[...new Set(raw)].join('\n'),warnings,diagnostics};
+}
+
+export async function scanVinLiveFrame(source,{enhance=false}={}) {
+  const engine=await barcodeEngine();
+  const symbols=await engine.readBarcodes(source.getContext('2d',{willReadFrequently:true}).getImageData(0,0,source.width,source.height),{formats:['Code39','Code128','Code93','PDF417','DataMatrix','QRCode'],tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:8});
+  const candidates=new Map();for(const symbol of symbols)for(const candidate of scannedVins(symbol.text,{barcode:true}))candidates.set(candidate.vin,{...candidate,method:'barcode'});
+  if(!candidates.size&&enhance)return scanVinBarcodes(source);
+  return {candidates:[...candidates.values()],warnings:[],diagnostics:{version:'live-1',width:source.width,height:source.height,passes:['Live camera frame'],symbols:symbols.map(s=>({format:s.format,text:s.text.slice(0,160)})),status:candidates.size?'read':'no-vin'}};
 }
 
 export async function scanVinText(source,{rectangle=null,progress=()=>{}}={}) {
