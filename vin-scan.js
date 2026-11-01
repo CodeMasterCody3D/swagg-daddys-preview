@@ -40,21 +40,24 @@ function enhanced(source) {
   }
   ctx.putImageData(pixels,0,0);return canvas;
 }
-export async function scanVinPhoto(source,{rectangle=null,progress=()=>{}}={}) {
+export async function scanVinBarcodes(source,{rectangle=null,progress=()=>{}}={}) {
+  const canvas=cropCanvas(source,rectangle), raw=[], warnings=[], candidates=new Map();
+  progress('Reading VIN barcodes…');
+  try {
+    await loadScript(asset('zxing/reader.js'));
+    window.ZXingWASM.prepareZXingModule({overrides:{locateFile:path=>asset('zxing/'+path)}});
+    const results=await window.ZXingWASM.readBarcodes(canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height),{formats:['Code39','Code128','Code93','PDF417','DataMatrix','QRCode'],tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:8});
+    for(const result of results) {
+      raw.push('Barcode ('+result.format+'): '+result.text);
+      for(const candidate of scannedVins(result.text,{barcode:true}))candidates.set(candidate.vin,{...candidate,method:'barcode'});
+    }
+  } catch {warnings.push('The barcode reader was unavailable.');}
+  return {candidates:[...candidates.values()],rawText:raw.join('\n'),warnings};
+}
+
+export async function scanVinText(source,{rectangle=null,progress=()=>{}}={}) {
   const canvas=cropCanvas(source,rectangle), raw=[], warnings=[];let worker;
   try {
-    progress('Reading VIN barcodes…');
-    try {
-      await loadScript(asset('zxing/reader.js'));
-      window.ZXingWASM.prepareZXingModule({overrides:{locateFile:path=>asset('zxing/'+path)}});
-      const results=await window.ZXingWASM.readBarcodes(canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height),{formats:['Code39','Code128','Code93','PDF417','DataMatrix','QRCode'],tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:8});
-      const candidates=new Map();
-      for(const result of results) {
-        raw.push('Barcode ('+result.format+'): '+result.text);
-        for(const candidate of scannedVins(result.text,{barcode:true})) candidates.set(candidate.vin,{...candidate,method:'barcode'});
-      }
-      if(candidates.size) return {candidates:[...candidates.values()],rawText:raw.join('\n'),warnings};
-    } catch {warnings.push('The barcode reader was unavailable; photo-to-text was tried instead.');}
     progress('Reading printed VIN text…');
     await loadScript(asset('tesseract/tesseract.min.js'));
     worker=await window.Tesseract.createWorker('eng',1,{workerPath:asset('tesseract/worker.min.js'),corePath:asset('tesseract/core'),langPath:asset('tesseract/lang'),gzip:true},{load_system_dawg:'0',load_freq_dawg:'0'});
@@ -73,4 +76,11 @@ export async function scanVinPhoto(source,{rectangle=null,progress=()=>{}}={}) {
     }
     return {candidates:[...candidates.values()],rawText:[...new Set(raw)].join('\n\n'),warnings};
   } finally {await worker?.terminate();}
+}
+
+export async function scanVinPhoto(source,options={}) {
+  const barcode=await scanVinBarcodes(source,options);
+  if(barcode.candidates.length)return barcode;
+  const text=await scanVinText(source,options);
+  return {...text,warnings:[...barcode.warnings,...text.warnings]};
 }

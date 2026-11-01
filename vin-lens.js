@@ -7,7 +7,7 @@ export async function sendGoogleVinPhoto(blob, { api = '/api', fetchImpl = globa
   body.set('google_consent','yes'); body.set('photo',blob,'vin-photo.jpg');
   const response = await fetchImpl(api + '/vin/photo', {method:'POST',body,credentials:'omit',signal});
   const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error || 'Google Lens is unavailable. Turn it off to use the on-device reader, or type the VIN.');
+  if (!response.ok) throw new Error(result.error || 'Google Lens is unavailable. Choose a clear VIN barcode photo or type the VIN.');
   if (!Array.isArray(result.candidates) || result.candidates.length > 10 || result.candidates.some(item => !validVin(item?.vin))) throw new Error('Google returned an unexpected result. Check the photo or type the VIN.');
   return { candidates:result.candidates, rawText:result.candidates.map(item=>item.vin).join('\n'), warnings:Array.isArray(result.warnings)?result.warnings.filter(value=>typeof value==='string').slice(0,3):[] };
 }

@@ -105,7 +105,7 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
 
       if (publicLens && request.method === 'POST') {
         if (!origin || !allowedPublic.includes(origin)) fail(403, 'Origin not allowed.');
-        if (env.GOOGLE_LENS_ENABLED !== 'true') fail(503, 'Google Lens is not available. Turn it off to use the on-device reader, or type the VIN.');
+        if (env.GOOGLE_LENS_ENABLED !== 'true') fail(503, 'Google Lens is not available. Choose a clear VIN barcode photo or type the VIN.');
         await throttle('lens-' + digest(context.ip || 'unknown'), 5, 15 * 60 * 1000);
         await throttle('lens-global', 60, 60 * 60 * 1000);
         if (!request.headers.get('content-type')?.startsWith('multipart/form-data;')) fail(415, 'A VIN photo is required.');
@@ -113,7 +113,7 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
         let form;
         try { form = await new Request(request.url, {method:'POST',headers:{'Content-Type':request.headers.get('content-type')},body:bytes}).formData(); }
         catch { fail(400, 'The VIN photo could not be read.'); }
-        if (form.get('google_consent') !== 'yes') fail(400, 'Choose Google Lens before sending a VIN photo to Google.');
+        if (form.get('google_consent') !== 'yes') fail(400, 'Use the VIN photo scanner after reviewing the Google Lens notice.');
         const files = form.getAll('photo'); const photo = files[0];
         if (files.length !== 1 || !photo || typeof photo === 'string' || !photo.size) fail(400, 'Choose one VIN photo.');
         if (photo.size > MAX_LENS_PHOTO_BYTES) fail(413, 'The VIN photo is too large. Crop it and retry.');
@@ -123,9 +123,9 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
         catch (error) {
           const code = error instanceof LensReadError ? error.code : 'unavailable';
           const message = code === 'verification'
-            ? 'Google requires verification. This reader has stopped. Use the on-device reader or type the VIN.'
-            : code === 'busy' ? 'Google is busy. Use the on-device reader or type the VIN.'
-            : 'Google could not read this photo. Use the on-device reader, crop and retry, or type the VIN.';
+            ? 'Google requires verification. This reader has stopped. Choose a clear VIN barcode photo or type the VIN.'
+            : code === 'busy' ? 'Google is busy. Choose a clear VIN barcode photo or type the VIN.'
+            : 'Google could not read this photo. Choose a clear VIN barcode photo, select the VIN area and retry, or type the VIN.';
           return json({error:message,code},503);
         }
       }

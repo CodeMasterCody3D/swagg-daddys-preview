@@ -1,5 +1,5 @@
-import { photoCanvas, scanVinPhoto } from './vin-scan.js';
-import { scanWithGoogle } from './vin-lens.js';
+import { photoCanvas } from './vin-scan.js';
+import { readVinPhoto } from './vin-reader.js';
 import { normalizeVin, validVin, decodedVehicle } from './vin-core.js';
 
 const $ = id => document.getElementById(id);
@@ -9,9 +9,14 @@ let lensApi='/api';
 if(location.hostname.endsWith('github.io')) {
   try {const endpoint=new URL(window.SWAGG_CONFIG?.backendOrigin);if(endpoint.protocol==='https:')lensApi=endpoint.origin+'/api';}catch{}
 }
-fetch(lensApi+'/health',{credentials:'omit',cache:'no-store'}).then(response=>response.ok?response.json():{}).then(health=>{
-  if(health.googleLens===true)$('vin-google-option').hidden=false;
-}).catch(()=>{});
+const lensReady=fetch(lensApi+'/health',{credentials:'omit',cache:'no-store',signal:AbortSignal.timeout(5000)}).then(response=>response.ok?response.json():{}).then(health=>{
+  const available=health.googleLens===true;
+  if(!available)$('vin-reader-note').textContent='VIN barcodes and printed text are read on your device. Google Lens is unavailable right now.';
+  return available;
+}).catch(()=>{
+  $('vin-reader-note').textContent='VIN barcodes and printed text are read on your device. Google Lens is unavailable right now.';
+  return false;
+});
 function restoreVinStatus(){ $('vin-photo-tools').before(status); }
 function clearDecode() {
   revision++; abort?.abort(); lookup.disabled=false; $('vin-specs').value=''; $('vin-details').textContent='';
@@ -51,7 +56,7 @@ async function decode() {
   } finally { clearTimeout(timeout); if (current===revision) lookup.disabled=false; }
 }
 lookup.addEventListener('click',decode);
-// Both native camera capture and selecting an existing image use the same local scanner.
+// Camera capture and existing photos share the barcode-first reader.
 let sourcePhoto=null, crop=null, cropStart=null, scanId=0;
 const preview=$('vin-photo-preview');
 function drawPhoto() {
@@ -82,8 +87,7 @@ async function readPhoto() {
   for(const id of ['vin-photo-button','vin-upload-button','vin-retry','vin-clear-photo'])$(id).disabled=true;
   try {
     const progress=text=>{if(current===scanId)status.textContent=text;};
-    const useGoogle=!$('vin-google-option').hidden && $('vin-google-consent').checked;
-    const result=await (useGoogle?scanWithGoogle(sourcePhoto,{rectangle:crop,api:lensApi,progress}):scanVinPhoto(sourcePhoto,{rectangle:crop,progress}));
+    const result=await readVinPhoto(sourcePhoto,{rectangle:crop,api:lensApi,progress,googleAvailable:lensReady});
     if(current!==scanId)return;
     if(result.candidates.length===1 && validVin(result.candidates[0].vin)){applyScannedVin(result.candidates[0].vin);return;}
     suggestions=result.candidates;$('vin-suggestions').replaceChildren(...suggestions.map((candidate,i)=>new Option(candidate.vin+(candidate.corrected?' — check characters':''),String(i))));

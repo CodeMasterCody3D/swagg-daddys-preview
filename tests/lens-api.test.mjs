@@ -72,7 +72,7 @@ test('verification failures return a safe recoverable error without upstream con
   try {
     const api=createApi({store,env,lensReader:async()=>{throw new LensReadError('verification');}});
     const response=await api(request());assert.equal(response.status,503);
-    const body=await response.json();assert.equal(body.code,'verification');assert.match(body.error,/on-device reader/);
+    const body=await response.json();assert.equal(body.code,'verification');assert.match(body.error,/barcode photo/);
     const unexpected=createApi({store,env,lensReader:async()=>{throw new Error('private upstream body and cookie');}});
     const error=await(await unexpected(request(),{ip:'other-fixture'})).json();assert.doesNotMatch(JSON.stringify(error),/private|cookie/);
   } finally {store.close();}
