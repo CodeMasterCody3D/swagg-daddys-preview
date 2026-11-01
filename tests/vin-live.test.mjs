@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createLiveVinScanner,captureVinFrame,cameraErrorMessage} from '../vin-live.js';
+import {createLiveVinScanner,captureVinFrame,cameraErrorMessage,frameSharpness} from '../vin-live.js';
 import {readVinPhoto} from '../vin-reader.js';
 const vin='1HGCV2F62JA012802';
 const candidate=()=>({candidates:[{vin}],diagnostics:{status:'read'}});
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 function fixture(options={}){
-  const queue=[],matches=[],errors=[];let stopped=0,calls=0,constraints;
+  const queue=[],matches=[],errors=[],delays=[];let stopped=0,calls=0,constraints;
   const stream={getTracks:()=>[{stop(){stopped++;}}]};
   const video={readyState:2,videoWidth:1920,videoHeight:1080,srcObject:null,async play(){},pause(){}};
-  const controller=createLiveVinScanner({video,getMedia:async c=>{constraints=c;return stream;},readFrame:async()=>{calls++;return candidate();},capture:()=>({frame:true}),schedule:fn=>{queue.push(fn);return fn;},cancel:fn=>{const index=queue.indexOf(fn);if(index>=0)queue.splice(index,1);},onMatch:(v,r)=>matches.push({vin:v,result:r}),onError:e=>errors.push(e),...options});
-  return {controller,video,stream,queue,matches,errors,get stopped(){return stopped;},get calls(){return calls;},get constraints(){return constraints;},async tick(){const fn=queue.shift();assert.ok(fn,'scheduled frame exists');await fn();}};
+  const controller=createLiveVinScanner({video,getMedia:async c=>{constraints=c;return stream;},readFrame:async()=>{calls++;return candidate();},capture:()=>({frame:true}),score:()=>1,samplesPerRead:1,schedule:(fn,delay)=>{queue.push(fn);delays.push(delay);return fn;},cancel:fn=>{const index=queue.indexOf(fn);if(index>=0)queue.splice(index,1);},onMatch:(v,r)=>matches.push({vin:v,result:r}),onError:e=>errors.push(e),...options});
+  return {controller,video,stream,queue,matches,errors,delays,get stopped(){return stopped;},get calls(){return calls;},get constraints(){return constraints;},async tick(){const fn=queue.shift();assert.ok(fn,'scheduled frame exists');await fn();}};
 }
 test('live camera requests rear video only, confirms two frames, then releases camera and fills once',async()=>{
   const f=fixture();await f.controller.start();assert.equal(f.constraints.audio,false);assert.equal(f.constraints.video.facingMode.ideal,'environment');
@@ -19,9 +19,23 @@ test('live camera requests rear video only, confirms two frames, then releases c
 test('a VIN that requires enhanced scanning can confirm on the next frame without Google',async()=>{
   const passes=[];
   const f=fixture({readFrame:async(_frame,{enhance})=>{passes.push(enhance);return enhance?candidate():{candidates:[],diagnostics:{status:'no-vin'}};}});
-  await f.controller.start();for(let i=0;i<5;i++)await f.tick();
-  assert.deepEqual(passes,[false,false,false,true,true]);
+  await f.controller.start();for(let i=0;i<2;i++)await f.tick();
+  assert.deepEqual(passes,[true,true]);
   assert.equal(f.matches.length,1);assert.equal(f.matches[0].vin,vin);assert.equal(f.stopped,1);
+});
+test('three lightweight samples choose the sharpest frame for one barcode attempt per 1.5-second cycle',async()=>{
+  const samples=[{quality:5},{quality:20},{quality:3}],selected=[];
+  const f=fixture({samplesPerRead:3,capture:()=>samples.shift(),score:frame=>frame.quality,readFrame:async frame=>{selected.push(frame);return candidate();}});
+  await f.controller.start();await f.tick();await f.tick();assert.equal(selected.length,0);await f.tick();
+  assert.equal(selected.length,1);assert.equal(selected[0].quality,20);assert.ok(f.delays.every(delay=>delay===500));f.controller.stop();
+});
+test('sharpness ranks a crisp edge above a smoothed edge, without accepting a VIN from sharpness alone',()=>{
+  const pixels=smooth=>{const width=24,height=12,data=new Uint8ClampedArray(width*height*4);for(let y=0;y<height;y++)for(let x=0;x<width;x++){const v=smooth?Math.min(255,Math.max(0,(x-7)*28)):(x<12?0:255);const i=(y*width+x)*4;data[i]=data[i+1]=data[i+2]=v;data[i+3]=255;}return {width,height,data};};
+  assert.ok(frameSharpness(pixels(false))>frameSharpness(pixels(true)));assert.equal(frameSharpness({width:4,height:4,data:new Uint8ClampedArray(64)}),0);
+});
+test('a camera that never delivers frames stops with an explicit error',async()=>{
+  const f=fixture();f.video.readyState=0;await f.controller.start();for(let i=0;i<20;i++)await f.tick();
+  assert.match(f.errors[0].message,/not delivering video frames/);assert.equal(f.controller.active,false);assert.equal(f.stopped,1);
 });
 test('closing during permission prevents a late grant reopening the camera',async()=>{
   const permission=deferred();const f=fixture({getMedia:()=>permission.promise});const started=f.controller.start();f.controller.stop();permission.resolve(f.stream);await started;

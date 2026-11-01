@@ -63,10 +63,12 @@ export async function scanVinBarcodes(source,{rectangle=null,progress=()=>{}}={}
     await loadScript(asset('zxing/reader.js'));
     stage='engine';
     const engine=await barcodeEngine();
-    for(let pass=0;pass<2;pass++) {
-      stage='decode';diagnostics.passes.push(pass?'Cubic scaling':'Standard scaling');
-      if(pass)progress('Retrying VIN barcodes with enhanced image scaling…');
-      const image=pass?cropCanvas(source,rectangle,{highQuality:true}):canvas;
+    const attempts=[{label:'Standard scaling',image:canvas},{label:'Cubic scaling',rectangle,highQuality:true}];
+    if(!rectangle)for(const fraction of [.6,.4])attempts.push({label:'Center crop '+Math.round(fraction*100)+'%',rectangle:{x:source.width*(1-fraction)/2,y:source.height*.2,width:source.width*fraction,height:source.height*.6},highQuality:true});
+    for(let pass=0;pass<attempts.length;pass++) {
+      const attempt=attempts[pass];stage='decode';diagnostics.passes.push(attempt.label);
+      if(pass)progress('Retrying VIN barcodes — '+attempt.label.toLowerCase()+'…');
+      const image=attempt.image||cropCanvas(source,attempt.rectangle,{highQuality:attempt.highQuality});
       const results=await engine.readBarcodes(image.getContext('2d').getImageData(0,0,image.width,image.height),{formats:['Code39','Code128','Code93','PDF417','DataMatrix','QRCode'],tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:8});
       for(const result of results) {
         diagnostics.symbols.push({format:result.format,text:result.text.slice(0,160)});

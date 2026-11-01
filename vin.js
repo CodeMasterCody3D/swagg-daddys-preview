@@ -13,7 +13,7 @@ function showBarcodeCheck(check) {
   $('vin-barcode-details').textContent=check?[
     'Reader check: '+check.version,
     'Photo: '+check.width+' × '+check.height,
-    ...(check.liveFrames?['Live frames checked: '+check.liveFrames]:[]),
+    ...(check.liveFrames?['Barcode attempts: '+check.liveFrames]:[]),
     'Passes: '+(check.passes.join(' → ')||'none completed'),
     ...check.symbols.map(symbol=>symbol.format+': '+symbol.text),
     'Result: '+(check.status==='read'?'VIN barcode decoded':check.status==='unavailable'?'Barcode reader could not run':'No complete VIN barcode decoded'),
@@ -139,10 +139,10 @@ async function selectPhoto(event) {
   } catch(error){status.textContent=error.message;}
   finally {scanBusy=false;for(const id of ['vin-photo-button','vin-upload-button','vin-retry','vin-clear-photo'])$(id).disabled=false;}
 }
-liveScanner=createLiveVinScanner({video:$('vin-live-video'),onFrame:(result,{frames})=>{if(result.diagnostics)showBarcodeCheck({...result.diagnostics,liveFrames:frames});},onStatus:message=>{if($('vin-live-status').textContent!==message)$('vin-live-status').textContent=message;},onMatch:(vin,result)=>{liveUi(false);showBarcodeCheck({...result.diagnostics,liveFrames:barcodeCheck?.liveFrames});applyScannedVin(vin,'live-barcode');},onError:error=>{liveUi(true);$('vin-photo-button').disabled=false;$('vin-live-capture').disabled=true;$('vin-live-status').textContent=cameraErrorMessage(error);}});
+liveScanner=createLiveVinScanner({video:$('vin-live-video'),onSample:info=>{$('vin-live-progress').textContent='Camera: '+info.width+' × '+info.height+' · Frames sampled: '+info.samples+' · Barcode attempts: '+info.attempts;},onFrame:(result,{frames,samples})=>{if(result.diagnostics)showBarcodeCheck({...result.diagnostics,liveFrames:frames});$('vin-live-progress').textContent='Frames sampled: '+samples+' · Barcode attempts: '+frames+' · Local barcode scan every ~1.5 seconds.';},onStatus:message=>{if($('vin-live-status').textContent!==message)$('vin-live-status').textContent=message;},onMatch:(vin,result)=>{liveUi(false);showBarcodeCheck({...result.diagnostics,liveFrames:barcodeCheck?.liveFrames});applyScannedVin(vin,'live-barcode');},onError:error=>{liveUi(true);$('vin-photo-button').disabled=false;$('vin-live-capture').disabled=true;$('vin-live-status').textContent=cameraErrorMessage(error);}});
 $('vin-photo-button').addEventListener('click',async()=>{
   if(scanBusy)return;
-  clearPhoto();scanSource.textContent='';showBarcodeCheck();liveUi(true);
+  clearPhoto();scanSource.textContent='';showBarcodeCheck();$('vin-live-progress').textContent='Waiting for camera frames. Barcode check about every 1.5 seconds.';liveUi(true);
   if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){$('vin-live-status').textContent='This browser cannot show an in-page camera here. Use the phone camera button below, choose a photo, or open this website in your phone’s browser.';return;}
   $('vin-photo-button').disabled=true;$('vin-live-capture').disabled=true;
   await liveScanner.start();if(liveScanner.active)$('vin-live-capture').disabled=false;
