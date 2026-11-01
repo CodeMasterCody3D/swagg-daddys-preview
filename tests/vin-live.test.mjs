@@ -64,3 +64,37 @@ test('a captured camera frame without a barcode follows the existing Google Lens
   const result=await readVinPhoto(frame,{googleAvailable:true,api:'/api'},{barcode:async source=>{assert.equal(source,frame);calls.push('barcode');return {candidates:[],warnings:[]};},google:async source=>{assert.equal(source,frame);calls.push('google');return {...candidate(),warnings:[]};},text:async()=>assert.fail('Google is available')});
   assert.deepEqual(calls,['barcode','google']);assert.equal(result.candidates[0].vin,vin);
 });
+
+test('live scan tries barcodes first, then confirms exact local text twice without a Google call',async()=>{
+  const events=[];let closed=0;
+  const f=fixture({readFrame:async()=>{events.push('barcode');return {candidates:[],diagnostics:{status:'no-vin'}};},makeTextReader:()=>({read:async()=>{events.push('text');return {candidates:[{vin,corrected:false}]};},close(){closed++;}})});
+  await f.controller.start();await f.tick();await f.tick();assert.deepEqual(events,['barcode','barcode']);
+  await f.tick();assert.equal(f.matches.length,0);await f.tick();
+  assert.deepEqual(events,['barcode','barcode','barcode','text','barcode','text']);
+  assert.equal(f.matches[0].vin,vin);assert.equal(f.matches[0].result.candidates[0].method,'text');assert.equal(f.matches[0].result.barcodeCheck.status,'no-vin');assert.equal(closed,1);assert.equal(f.stopped,1);
+});
+
+test('corrected, checksum-invalid and ambiguous printed VINs never auto-fill',async()=>{
+  const results=[{candidates:[{vin,corrected:true}]},{candidates:[{vin:'1HGCV2F62JA012803',corrected:false}]},{candidates:[{vin,corrected:false},{vin:'5J6YH287X8L000133',corrected:false}]}];
+  const f=fixture({textAfterMisses:1,readFrame:async()=>({candidates:[],diagnostics:{status:'no-vin'}}),makeTextReader:()=>({read:async()=>results.shift(),close(){}})});
+  await f.controller.start();for(let i=0;i<3;i++){await f.tick();assert.equal(f.matches.length,0);}f.controller.stop();
+});
+
+test('a local OCR failure leaves barcode scanning usable and does not repeatedly restart OCR',async()=>{
+  let textCalls=0,closed=0,barcodes=0;
+  const f=fixture({textAfterMisses:1,readFrame:async()=>++barcodes>=3?candidate():{candidates:[],diagnostics:{status:'no-vin'}},makeTextReader:()=>({read:async()=>{textCalls++;throw Error('Worker unavailable');},close(){closed++;}})});
+  await f.controller.start();for(let i=0;i<4;i++)await f.tick();
+  assert.equal(textCalls,1);assert.equal(closed,1);assert.equal(f.errors.length,0);assert.equal(f.matches[0].vin,vin);
+});
+
+test('stopping during local OCR closes its worker and suppresses a late match',async()=>{
+  const text=deferred();let closed=0;
+  const f=fixture({textAfterMisses:1,readFrame:async()=>({candidates:[],diagnostics:{status:'no-vin'}}),makeTextReader:()=>({read:()=>text.promise,close(){closed++;}})});
+  await f.controller.start();const tick=f.tick();await Promise.resolve();f.controller.stop();text.resolve({candidates:[{vin,corrected:false}]});await tick;
+  assert.equal(closed,1);assert.equal(f.matches.length,0);assert.equal(f.queue.length,0);assert.equal(f.errors.length,0);
+});
+
+test('readable barcodes never load the live text worker',async()=>{
+  const f=fixture({makeTextReader:()=>assert.fail('Text worker must remain lazy')});
+  await f.controller.start();await f.tick();await f.tick();assert.equal(f.matches[0].vin,vin);
+});
