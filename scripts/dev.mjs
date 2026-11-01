@@ -5,15 +5,22 @@ import { Readable } from 'node:stream';
 import { createApi } from '../server/api.mjs';
 import { localStore } from '../server/local-store.mjs';
 import { hashPassword, digest, token, SESSION_MS } from '../server/auth.mjs';
+import { LensReadError, lensVinResult } from '../server/lens.mjs';
 
 await mkdir('.local-data', { recursive:true });
 const env = { ...process.env };
 let qa;
 try { qa = JSON.parse(await readFile('.openai/qa.json','utf8')); } catch {}
 if (qa) { env.OWNER_USERNAME='owner'; env.OWNER_PASSWORD_HASH=await hashPassword(qa.password); }
+if (qa?.mockGoogleLens) env.GOOGLE_LENS_ENABLED='true';
 const store = localStore('.local-data/inbox.sqlite');
-const api = createApi({ store, env });
-const publicFiles = new Set(['/index.html','/site-config.js','/intake.js','/media.js','/vin.js','/vin-core.js','/vin-scan.js','/privacy.html','/owner/index.html','/owner/owner.css','/owner/owner.js']);
+const lensReader = qa?.mockGoogleLens ? async () => {
+  const fixture = JSON.parse(await readFile('.openai/qa.json','utf8'));
+  if(fixture.lensScenario==='verification')throw new LensReadError('verification');
+  return lensVinResult({segments:[{text:fixture.lensScenario==='unreadable'?'UNREADABLE':'1HGCM82633A004352'}]});
+} : undefined;
+const api = createApi({ store, env, lensReader });
+const publicFiles = new Set(['/index.html','/site-config.js','/intake.js','/media.js','/vin.js','/vin-core.js','/vin-scan.js','/vin-lens.js','/privacy.html','/owner/index.html','/owner/owner.css','/owner/owner.js']);
 const types = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.webp':'image/webp', '.wasm':'application/wasm', '.gz':'application/gzip', '.txt':'text/plain' };
 const root = resolve('.');
 const server = createServer(async (req,res) => {
@@ -49,7 +56,8 @@ const server = createServer(async (req,res) => {
     if (!vendor && !publicFiles.has(path) && !/^\/assets\/[a-z0-9-]+\.webp$/.test(path)) { res.writeHead(404); res.end('Not found'); return; }
     const filename = resolve(root, vendor ? 'public'+path : '.'+path);
     if (!filename.startsWith(root+sep)) { res.writeHead(403); res.end(); return; }
-    const data = await readFile(filename);
+    let data = await readFile(filename);
+    if(qa?.mockGoogleLens && path==='/index.html')data=Buffer.from(data.toString().replace('<body>','<body><p style="position:sticky;top:0;z-index:1000;background:#ffe390;color:#171b18;padding:12px;margin:0;font:700 15px Arial" role="note">LOCAL TEST: simulated Google Lens response. No photo is sent to Google.</p>'));
     res.writeHead(200, { 'Content-Type':types[extname(path)] || 'application/octet-stream', 'Cache-Control':'no-store' }); res.end(data);
   } catch { res.writeHead(500); res.end('Local preview error'); }
 });

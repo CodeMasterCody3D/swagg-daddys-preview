@@ -1,9 +1,17 @@
 import { photoCanvas, scanVinPhoto } from './vin-scan.js';
+import { scanWithGoogle } from './vin-lens.js';
 import { normalizeVin, validVin, decodedVehicle } from './vin-core.js';
 
 const $ = id => document.getElementById(id);
 const input = $('vin'), status = $('vin-status'), lookup = $('vin-lookup');
 let timer, revision = 0, abort, scanBusy = false;
+let lensApi='/api';
+if(location.hostname.endsWith('github.io')) {
+  try {const endpoint=new URL(window.SWAGG_CONFIG?.backendOrigin);if(endpoint.protocol==='https:')lensApi=endpoint.origin+'/api';}catch{}
+}
+fetch(lensApi+'/health',{credentials:'omit',cache:'no-store'}).then(response=>response.ok?response.json():{}).then(health=>{
+  if(health.googleLens===true)$('vin-google-option').hidden=false;
+}).catch(()=>{});
 function restoreVinStatus(){ $('vin-photo-tools').before(status); }
 function clearDecode() {
   revision++; abort?.abort(); lookup.disabled=false; $('vin-specs').value=''; $('vin-details').textContent='';
@@ -73,7 +81,9 @@ async function readPhoto() {
   $('vin-retry-status').append(status);
   for(const id of ['vin-photo-button','vin-upload-button','vin-retry','vin-clear-photo'])$(id).disabled=true;
   try {
-    const result=await scanVinPhoto(sourcePhoto,{rectangle:crop,progress:text=>{if(current===scanId)status.textContent=text;}});
+    const progress=text=>{if(current===scanId)status.textContent=text;};
+    const useGoogle=!$('vin-google-option').hidden && $('vin-google-consent').checked;
+    const result=await (useGoogle?scanWithGoogle(sourcePhoto,{rectangle:crop,api:lensApi,progress}):scanVinPhoto(sourcePhoto,{rectangle:crop,progress}));
     if(current!==scanId)return;
     if(result.candidates.length===1 && validVin(result.candidates[0].vin)){applyScannedVin(result.candidates[0].vin);return;}
     suggestions=result.candidates;$('vin-suggestions').replaceChildren(...suggestions.map((candidate,i)=>new Option(candidate.vin+(candidate.corrected?' — check characters':''),String(i))));
