@@ -1,4 +1,15 @@
 plugins { id 'com.android.application' }
+def pushConfig = [:]
+def rawPushConfig = System.getenv('FIREBASE_ANDROID_CONFIG_JSON')
+if (rawPushConfig) {
+    def config = new groovy.json.JsonSlurper().parseText(rawPushConfig)
+    def client = config.client.find { it.client_info.android_client_info.package_name == 'com.swaggdaddysmobile' }
+    if (!client) throw new GradleException('Firebase config must include com.swaggdaddysmobile')
+    pushConfig = [appId:client.client_info.mobilesdk_app_id, apiKey:client.api_key[0].current_key,
+                  senderId:config.project_info.project_number, projectId:config.project_info.project_id]
+    if (pushConfig.values().any { !it }) throw new GradleException('Incomplete Firebase Android config')
+}
+def javaString = { value -> groovy.json.JsonOutput.toJson(value ?: '') }
 
 android {
     namespace 'com.swaggdaddys.owner'
@@ -9,8 +20,13 @@ android {
         applicationId 'com.swaggdaddysmobile'
         minSdk 26
         targetSdk 36
-        versionCode 3
-        versionName '1.0.2'
+        versionCode 4
+        versionName '1.0.3'
+        buildConfigField 'boolean', 'PUSH_CONFIGURED', pushConfig ? 'true' : 'false'
+        buildConfigField 'String', 'FIREBASE_APP_ID', javaString(pushConfig.appId)
+        buildConfigField 'String', 'FIREBASE_API_KEY', javaString(pushConfig.apiKey)
+        buildConfigField 'String', 'FIREBASE_SENDER_ID', javaString(pushConfig.senderId)
+        buildConfigField 'String', 'FIREBASE_PROJECT_ID', javaString(pushConfig.projectId)
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
     signingConfigs {
@@ -39,6 +55,8 @@ android {
 }
 
 dependencies {
+    implementation platform('com.google.firebase:firebase-bom:34.4.0')
+    implementation 'com.google.firebase:firebase-messaging'
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.test:rules:1.6.1'

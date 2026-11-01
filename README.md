@@ -7,6 +7,8 @@ The customer site keeps its logo, card artwork, large Call Now button, Text Me l
 ## Owner inbox
 
 - Password login with no public signup. Verification runs on the server using scrypt or PBKDF2-SHA256.
+- VINs now appear prominently on request cards and at the top of request details, including the original entered value when different. A clickable VIN opens an owner-authenticated resolver for CHARM manuals using year, make, model, cylinder count, displacement and drive. Missing saved specifications are decoded through NHTSA using the VIN. The VIN and customer information are not sent to CHARM. An exact engine match opens its listed manual; ambiguous matches offer choices, and unavailable manuals show an explicit browse fallback. This does not connect registration, owner databases, or CARFAX records.
+- Native Android notification setup, delivery limits, credentials, and required device verification are documented in `android/README.md`. A website refresh alone cannot add notification support to an already installed APK.
 - Customer list, search, status filter, private notes, and job status: New, Contacted, Scheduled, In progress, Completed, Cancelled.
 - Tap a customer's number or Call button to open a `tel:` link. Android chooses a compatible dialer; Google Voice availability depends on the device. The future wrapper must handle telephone and SMS links with Android intents, using `ACTION_DIAL` for calls rather than placing calls automatically.
 - GPS links open the shared vehicle location in Maps. Customers may decline GPS and enter an area instead.

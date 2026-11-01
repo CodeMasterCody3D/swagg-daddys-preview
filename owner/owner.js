@@ -17,6 +17,16 @@ async function api(path, options = {}) {
 function el(tag, value, className) { const node = document.createElement(tag); if (value !== undefined) node.textContent = value; if (className) node.className = className; return node; }
 function contactLink(number, kind = 'tel') { return `${kind}:${number.replace(/[^+0-9]/g, '')}`; }
 function shortDate(date) { return new Date(date).toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
+function requestVin(item) {
+  const box=el('div',undefined,'vin-summary');box.append(el('strong','VIN'));
+  const value=item.vin || item.vinSubmitted || '';
+  if(value&&/^[A-HJ-NPR-Z0-9]{17}$/.test(item.vin || '')) {
+    const link=el('a',value,'vin-value');link.href=apiBase+'/requests/'+encodeURIComponent(item.id)+'/manuals';link.target='_blank';link.rel='noopener noreferrer';link.referrerPolicy='no-referrer';link.title='Find vehicle repair manuals on CHARM';
+    box.append(link,el('span','Tap VIN to find this vehicle’s CHARM manuals.','small muted'));
+  }else box.append(el('span',value || 'Not included in this saved request','vin-value'));
+  if(item.vinSubmitted&&item.vinSubmitted!==item.vin&&item.vin)box.append(el('span','As entered: '+item.vinSubmitted,'small muted'));
+  return box;
+}
 function render() {
   const query = $('search').value.trim().toLowerCase(); const filter = $('status-filter').value;
   const visible = items.filter(item => (!filter || item.status === filter) && (!query || [item.name,item.phone,item.vehicle,item.vin,item.vinSubmitted,item.location].join(' ').toLowerCase().includes(query)));
@@ -25,6 +35,7 @@ function render() {
     const card = el('article', undefined, 'customer'); const top = el('div', undefined, 'customer-heading');
     const name = el('button', customer.name, 'customer-name'); name.type='button'; name.addEventListener('click', () => openCustomer(customer.id)); top.append(name);
     top.append(el('span', customer.status, 'badge')); card.append(top, el('p', customer.vehicle), el('p', customer.issue));
+    card.append(requestVin(customer));
     const phone = el(customer.dialNumber?'a':'p', customer.phone || 'Phone not provided', 'phone'); if(customer.dialNumber)phone.href = contactLink(customer.dialNumber); phone.setAttribute('aria-label', `Call ${customer.name} at ${customer.phone}`); card.append(phone);
     const urgent = customer.urgency.startsWith('Urgent'); card.append(el('span', customer.urgency.split(' — ')[0], 'badge' + (urgent ? ' urgent' : '')));
     const bottom = el('div', undefined, 'customer-bottom'); bottom.append(el('span', shortDate(customer.createdAt), 'small'));
@@ -60,12 +71,11 @@ async function openCustomer(id) {
     $('call-customer').hidden=!item.dialNumber;$('text-customer').hidden=!item.dialNumber;
     $('call-customer').href = contactLink(item.dialNumber || ''); $('call-customer').textContent = 'Call ' + item.phone;
     $('text-customer').href = contactLink(item.dialNumber || '', 'sms');
-    if(!item.dialNumber)fact('Contact information (as entered)',item.phone || 'No phone number provided');
-    if(item.vinSubmitted && !item.vin)fact('VIN (as entered; incomplete or unrecognized)',item.vinSubmitted);
+    $('customer-facts').append(requestVin(item));
+    fact('Contact information (as entered)',item.phone || 'No phone number provided');
     fact('Requested', shortDate(item.createdAt)); fact('Urgency', item.urgency); fact('Issue', item.issue); fact('Location', item.location);
-    if (item.gps) { const map = el('a', 'Open vehicle location in Maps'); map.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(item.gps.latitude + ',' + item.gps.longitude); map.target='_blank'; map.rel='noopener noreferrer'; fact('Shared GPS', map); }
+    if (item.gps) { fact('Shared GPS coordinates',[item.gps.latitude,item.gps.longitude].join(', ')+' · Accuracy: '+item.gps.accuracy+' meters');const map = el('a', 'Open vehicle location in Maps'); map.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(item.gps.latitude + ',' + item.gps.longitude); map.target='_blank'; map.rel='noopener noreferrer'; fact('Vehicle location', map); }
     if (item.vin) {
-      fact('VIN', item.vin);
       if (item.vehicleSpecs) fact('Vehicle specifications (customer supplied)', Object.entries(item.vehicleSpecs).map(([key,value]) => key+': '+value).join(' · ') || 'Not supplied');
       const history = el('div'); const button=el('button','View history for this VIN','button secondary compact'); button.type='button'; history.append(button); fact('Vehicle history',history);
       let cursor=null, started=false;
@@ -88,6 +98,7 @@ async function openCustomer(id) {
       });
     }
     fact('Customer details', item.details || 'No additional details.');
+    if(item.consentAt)fact('Service request disclosure accepted',shortDate(item.consentAt));
     $('update-form').hidden=Boolean(item.deletedAt); $('delete-request').hidden=Boolean(item.deletedAt); $('restore-request').hidden=!item.deletedAt; $('delete-confirmation').hidden=true;
     if (item.deletedAt) fact('Moved to Trash',shortDate(item.deletedAt));
     $('job-status').value = item.status; $('owner-notes').value = item.notes || ''; $('detail-notice').textContent = ''; $('detail-notice').classList.remove('error');

@@ -1,5 +1,7 @@
 import { normalizeVin, validVin, specFields } from '../vin-core.js';
 import { randomUUID } from 'node:crypto';
+import { createPushService, validDeviceId } from './push.mjs';
+import { findManuals, manualResponse } from './manuals.mjs';
 import { configured, cookieValue, digest, sessionCookie, SESSION_MS, token, verifyPassword } from './auth.mjs';
 
 export const MAX_MEDIA_BYTES = 4 * 1024 * 1024;
@@ -50,7 +52,7 @@ function validMedia(bytes, mime) {
 }
 
 // The adapter uses conditional writes, so rate limits and owner edits are safe across function instances.
-export function createApi({ store, env = process.env, now = Date.now }) {
+export function createApi({ store, env = process.env, now = Date.now, notifications = createPushService({ store, env, now }) }) {
   async function throttle(key, limit, windowMs) {
     for (let attempt = 0; attempt < 6; attempt++) {
       const entry = await store.get('limits/' + key);
@@ -172,18 +174,30 @@ export function createApi({ store, env = process.env, now = Date.now }) {
         } catch (error) {
           await Promise.allSettled(saved.map(key => store.remove(key))); throw error;
         }
+        // Notification failures must never make a saved request look unsent.
+        try { await notifications.notify(); } catch { console.error('Owner notification queued or delivery unavailable'); }
         return json({ received: true, reference: record.id }, 201);
       }
 
       const auth = await session(request);
-      if (route === '/session' && request.method === 'GET') return json({ username: env.OWNER_USERNAME || 'owner', csrf: auth.csrf });
+      if (route === '/session' && request.method === 'GET') return json({ username: env.OWNER_USERNAME || 'owner', csrf: auth.csrf, notificationsReady: notifications.ready });
       if (['POST','PATCH','DELETE','PUT'].includes(request.method)) {
         sameOrigin(request);
         if (request.headers.get('x-csrf-token') !== auth.csrf) fail(403, 'Please reload the dashboard and try again.');
       }
       if (route === '/logout' && request.method === 'POST') {
         await store.remove(auth.key);
+        await notifications.signOut(auth);
         return json({ signedOut: true }, 200, { 'Set-Cookie': sessionCookie('', 0) });
+      }
+      if (route === '/notifications/device' && ['POST','DELETE'].includes(request.method)) {
+        const body=await jsonBody(request,8192);
+        if(!validDeviceId(body?.id))fail(400,'Invalid notification device.');
+        if(request.method==='DELETE'){await notifications.remove(body.id);return json({enabled:false});}
+        if(!notifications.ready)fail(503,'Push notifications have not been connected yet.');
+        try { await notifications.register(body.id,body.token,auth); }
+        catch(error){fail(400,error.message);}
+        return json({enabled:true});
       }
       if (route === '/requests' && request.method === 'GET') {
         const before = url.searchParams.get('before');
@@ -199,6 +213,14 @@ export function createApi({ store, env = process.env, now = Date.now }) {
           }
         }
         return json({ items:matches.slice(0,50), next:matches.length>50 ? matches[49].id : null, statuses:STATUSES });
+      }
+      const manualMatch=route.match(/^\/requests\/(\d{13}-[0-9a-f-]{36})\/manuals$/);
+      if(manualMatch&&request.method==='GET') {
+        const entry=await store.get('requests/'+manualMatch[1]);
+        if(!entry)fail(404,'Request not found.');
+        await throttle('manuals-'+digest(auth.key),30,60*1000);
+        try{return manualResponse(await findManuals(entry.value));}
+        catch{return manualResponse({vehicle:entry.value.vehicle,specs:entry.value.vehicleSpecs||{},options:[],browseUrl:'https://charm.li/',message:'The automatic manual lookup is temporarily unavailable. Browse CHARM to select this vehicle.'});}
       }
       const historyMatch = route.match(/^\/vehicles\/([A-HJ-NPR-Z0-9]{17})\/history$/);
       if (historyMatch && request.method === 'GET') {

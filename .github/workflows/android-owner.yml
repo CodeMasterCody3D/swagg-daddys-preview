@@ -2,7 +2,7 @@ name: Build Android owner app
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, preview/owner-notifications]
     paths: ['android/**', '.github/workflows/android-owner.yml']
 permissions:
   contents: read
@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
+      FIREBASE_ANDROID_CONFIG_JSON: ${{ secrets.FIREBASE_ANDROID_CONFIG_JSON }}
       SWAGG_CI_TEST_KEYSTORE: /tmp/swagg-owner-ci-test.p12
     steps:
       - uses: actions/checkout@v4
@@ -66,7 +67,7 @@ jobs:
             adb install -r -t android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
             adb shell am instrument -w -r com.swaggdaddysmobile.test/androidx.test.runner.AndroidJUnitRunner > apk-output/device-tests.txt
             cat apk-output/device-tests.txt
-            python -c "from pathlib import Path; result = Path('apk-output/device-tests.txt').read_text(); assert 'OK (2 tests)' in result and 'FAILURES!!!' not in result, result"
+            python -c "from pathlib import Path; result = Path('apk-output/device-tests.txt').read_text(); assert 'OK (4 tests)' in result and 'FAILURES!!!' not in result, result"
       - name: Package unsigned release and signing verifier
         if: success()
         run: |
