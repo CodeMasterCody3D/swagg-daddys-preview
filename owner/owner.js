@@ -32,20 +32,24 @@ function render() {
   }
   $('empty').hidden = visible.length > 0; $('empty').textContent = items.length ? 'No requests match your search.' : 'No requests yet. New service requests will appear here.';
   $('count').textContent = '(' + items.length + (next ? '+' : '') + ')'; $('load-more').hidden = !next;
+  $('stats').hidden=$('inbox-view').value==='trash';
+  $('inbox-title').textContent=$('inbox-view').value==='trash'?'Trash':'Service requests';
+  if (!items.length && $('inbox-view').value==='trash') $('empty').textContent='Trash is empty.';
   $('stats').replaceChildren();
   for (const [label,value] of [['New', items.filter(i => i.status === 'New').length], ['Active', items.filter(i => ['Contacted','Scheduled','In progress'].includes(i.status)).length], ['Completed', items.filter(i => i.status === 'Completed').length]]) {
     const stat = el('div', undefined, 'stat'); stat.append(el('strong', String(value)), el('span', label + (next ? ' · loaded' : ''))); $('stats').append(stat);
   }
 }
 async function load(older = false) {
-  $('refresh').disabled = true; $('load-more').disabled = true;
+  $('refresh').disabled = true; $('load-more').disabled = true; $('inbox-view').disabled=true;
   try {
-    const data = await api('/requests' + (older && next ? '?before=' + encodeURIComponent(next) : ''));
+    const params=new URLSearchParams({view:$('inbox-view').value}); if (older && next) params.set('before',next);
+    const data = await api('/requests?'+params);
     items = older ? [...new Map([...items,...data.items].map(i => [i.id,i])).values()] : data.items; next = data.next;
     if (!statuses.length) { statuses = data.statuses; for (const status of statuses) { $('status-filter').append(new Option(status, status)); $('job-status').append(new Option(status, status)); } }
     show('inbox'); render(); notice('');
   } catch (error) { notice(error.message, true); }
-  finally { $('refresh').disabled = false; $('load-more').disabled = false; }
+  finally { $('refresh').disabled = false; $('load-more').disabled = false; $('inbox-view').disabled=false; }
 }
 function fact(label, value) { const row = el('div', undefined, 'fact'); row.append(el('strong', label), typeof value === 'string' ? el('p', value) : value); $('customer-facts').append(row); }
 async function openCustomer(id) {
@@ -81,6 +85,8 @@ async function openCustomer(id) {
       });
     }
     fact('Customer details', item.details || 'No additional details.');
+    $('update-form').hidden=Boolean(item.deletedAt); $('delete-request').hidden=Boolean(item.deletedAt); $('restore-request').hidden=!item.deletedAt; $('delete-confirmation').hidden=true;
+    if (item.deletedAt) fact('Moved to Trash',shortDate(item.deletedAt));
     $('job-status').value = item.status; $('owner-notes').value = item.notes || ''; $('detail-notice').textContent = ''; $('detail-notice').classList.remove('error');
     $('customer-dialog').showModal(); notice('');
     for (const file of item.media) {
@@ -117,6 +123,7 @@ $('login-form').addEventListener('submit', async event => {
 });
 $('sign-out').addEventListener('click', async () => { try { await api('/logout', { method:'POST', body:'{}' }); signedOut(); notice('Signed out.'); } catch (error) { notice(error.message, true); } });
 $('refresh').addEventListener('click', () => load()); $('load-more').addEventListener('click', () => load(true));
+$('inbox-view').addEventListener('change',()=>{items=[];next=null;void load();});
 $('search').addEventListener('input', render); $('status-filter').addEventListener('change', render);
 $('close-detail').addEventListener('click', () => $('customer-dialog').close());
 $('customer-dialog').addEventListener('close', () => { clearMedia(); active = null; $('customer-facts').replaceChildren(); $('owner-notes').value = ''; });
@@ -128,6 +135,21 @@ $('update-form').addEventListener('submit', async event => {
   } catch (error) { $('detail-notice').textContent=error.message; $('detail-notice').classList.add('error'); }
   finally { $('save-job').disabled=false; }
 });
+$('delete-request').addEventListener('click',()=>{ $('delete-confirmation').hidden=false; $('confirm-delete').focus(); });
+$('cancel-delete').addEventListener('click',()=>{ $('delete-confirmation').hidden=true; $('delete-request').focus(); });
+async function moveRequest(restoring=false) {
+  if (!active) return;
+  const item=active; const button=$(restoring?'restore-request':'confirm-delete'); button.disabled=true;
+  $('close-detail').disabled=true;
+  try {
+    await api('/requests/'+item.id+(restoring?'/restore':''),{method:restoring?'POST':'DELETE',body:JSON.stringify({revision:item.revision})});
+    $('customer-dialog').close(); await load();
+    notice(restoring?'Request restored to the active inbox and VIN history.':'Request moved to Trash. Choose Trash to restore it.');
+  } catch(error) { $('detail-notice').textContent=error.message; $('detail-notice').classList.add('error'); }
+  finally { button.disabled=false; $('close-detail').disabled=false; }
+}
+$('confirm-delete').addEventListener('click',()=>moveRequest(false));
+$('restore-request').addEventListener('click',()=>moveRequest(true));
 async function init() {
   // Keep owner authentication same-origin: avoids cross-site cookies in Android WebView.
   if (github && configuredOrigin) { location.replace(configuredOrigin + '/owner/'); return; }

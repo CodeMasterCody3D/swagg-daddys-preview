@@ -188,10 +188,17 @@ export function createApi({ store, env = process.env, now = Date.now }) {
       if (route === '/requests' && request.method === 'GET') {
         const before = url.searchParams.get('before');
         if (before && !idPattern.test(before)) fail(400, 'Invalid page.');
+        const trash = url.searchParams.get('view') === 'trash';
         const keys = (await store.keys('requests/')).sort().reverse().filter(key => !before || key < 'requests/' + before);
-        const selected = keys.slice(0, 50);
-        const items = (await Promise.all(selected.map(key => store.get(key)))).filter(Boolean).map(({ value, etag }) => ({ ...publicRecord(value), revision: etag }));
-        return json({ items, next: keys.length > 50 ? selected.at(-1).slice(9) : null, statuses: STATUSES });
+        const matches = [];
+        for (const key of keys) {
+          const entry = await store.get(key);
+          if (entry && Boolean(entry.value.deletedAt) === trash) {
+            matches.push({ ...publicRecord(entry.value), revision:entry.etag });
+            if (matches.length === 51) break;
+          }
+        }
+        return json({ items:matches.slice(0,50), next:matches.length>50 ? matches[49].id : null, statuses:STATUSES });
       }
       const historyMatch = route.match(/^\/vehicles\/([A-HJ-NPR-Z0-9]{17})\/history$/);
       if (historyMatch && request.method === 'GET') {
@@ -201,11 +208,11 @@ export function createApi({ store, env = process.env, now = Date.now }) {
         const matches = [];
         for (const key of keys) {
           const entry = await store.get(key);
-          if (entry?.value.vin === historyMatch[1]) { matches.push(entry.value); if (matches.length === 51) break; }
+          if (entry?.value.vin === historyMatch[1] && !entry.value.deletedAt) { matches.push(entry.value); if (matches.length === 51) break; }
         }
         return json({items:matches.slice(0,50),next:matches.length>50 ? matches[49].id : null});
       }
-      const match = route.match(/^\/requests\/([^/]+)(?:\/media\/([a-f0-9-]{36}))?$/);
+      const match = route.match(/^\/requests\/([^/]+)(?:\/media\/([a-f0-9-]{36})|\/(restore))?$/);
       if (!match || !idPattern.test(match[1])) fail(404, 'Not found.');
       const key = 'requests/' + match[1];
       const entry = await store.get(key);
@@ -220,10 +227,11 @@ export function createApi({ store, env = process.env, now = Date.now }) {
         headers.set('Content-Security-Policy', "default-src 'none'; sandbox");
         return new Response(data, { headers });
       }
-      if (!match[2] && request.method === 'GET') return json({ ...entry.value, revision: entry.etag });
-      if (!match[2] && request.method === 'PATCH') {
+      if (!match[2] && !match[3] && request.method === 'GET') return json({ ...entry.value, revision: entry.etag });
+      if (!match[2] && !match[3] && request.method === 'PATCH') {
         const body = await jsonBody(request);
         if (!body || typeof body !== 'object') fail(400, 'Invalid update.');
+        if (entry.value.deletedAt) fail(409, 'Restore this request before editing it.');
         if (!STATUSES.includes(body.status)) fail(400, 'Choose a valid status.');
         const notes = text(body.notes ?? '', 4000, false);
         if (body.revision !== entry.etag) fail(409, 'This request changed. Reload it before saving.');
@@ -232,6 +240,17 @@ export function createApi({ store, env = process.env, now = Date.now }) {
         if (!await store.put(key, record, entry.etag)) fail(409, 'This request changed. Reload it before saving.');
         const latest = await store.get(key);
         return json({ ...latest.value, revision: latest.etag });
+      }
+      if ((!match[2] && !match[3] && request.method === 'DELETE') || (match[3] === 'restore' && request.method === 'POST')) {
+        const body = await jsonBody(request,2048);
+        if (body?.revision !== entry.etag) fail(409, 'This request changed. Reload it before trying again.');
+        const restoring = match[3] === 'restore';
+        if (restoring !== Boolean(entry.value.deletedAt)) fail(409, restoring ? 'This request is already active.' : 'This request is already in Trash.');
+        const record = { ...entry.value, updatedAt:new Date(now()).toISOString() };
+        if (restoring) delete record.deletedAt;
+        else record.deletedAt = record.updatedAt;
+        if (!await store.put(key,record,entry.etag)) fail(409, 'This request changed. Reload it before trying again.');
+        return json({ ...record, revision:(await store.get(key)).etag });
       }
       fail(405, 'Method not allowed.');
     } catch (error) {

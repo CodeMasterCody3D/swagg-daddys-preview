@@ -35,8 +35,9 @@
       <p class="small muted">Owner access only. There is no public account signup.</p>
     </section>
     <section id="inbox" hidden>
-      <div class="toolbar"><h2>Service requests <span id="count" class="count"></span></h2><div class="toolbar-actions"><button class="button secondary compact" id="refresh">Refresh</button><button class="button secondary compact" id="sign-out">Sign out</button></div></div>
-      <div class="filters"><div><label for="search">Find a customer</label><input id="search" type="search" placeholder="Name, phone, vehicle…" autocomplete="off"></div><div><label for="status-filter">Status</label><select id="status-filter"><option value="">All statuses</option></select></div></div>
+      <div class="toolbar"><h2><span id="inbox-title">Service requests</span> <span id="count" class="count"></span></h2><div class="toolbar-actions"><button class="button secondary compact" id="refresh">Refresh</button><button class="button secondary compact" id="sign-out">Sign out</button></div></div>
+      <div class="view-switch"><label for="inbox-view">Show</label><select id="inbox-view"><option value="active">Active requests</option><option value="trash">Trash</option></select></div>
+      <div class="filters"><div><label for="search">Find a customer</label><input id="search" type="search" placeholder="Name, phone, vehicle, VIN…" autocomplete="off"></div><div><label for="status-filter">Status</label><select id="status-filter"><option value="">All statuses</option></select></div></div>
       <div class="stats" id="stats"></div>
       <div id="cards" class="cards"></div>
       <p id="empty" class="panel empty" hidden>No requests yet. New service requests will appear here.</p>
@@ -52,6 +53,9 @@
     <div id="customer-facts" class="facts"></div>
     <div id="attachments" class="attachments"></div>
     <form id="update-form"><label for="job-status">Job status</label><select id="job-status"></select><label for="owner-notes">Private notes</label><textarea id="owner-notes" rows="4" maxlength="4000" placeholder="Appointment details, parts needed, or next steps…"></textarea><button id="save-job" class="button" type="submit">Save changes</button></form>
+    <div id="request-actions" class="request-actions"><button id="delete-request" class="button danger" type="button">Delete request</button><button id="restore-request" class="button secondary" type="button" hidden>Restore request</button>
+      <div id="delete-confirmation" hidden><p>Move this request to Trash? It will disappear from the active inbox and VIN history. You can restore it, including its notes and attachments, from Trash.</p><div class="toolbar-actions"><button id="confirm-delete" class="button danger" type="button">Move to Trash</button><button id="cancel-delete" class="button secondary" type="button">Keep request</button></div></div>
+    </div>
     <p id="detail-notice" role="status" aria-live="polite" class="small"></p>
   </dialog>
 </body>

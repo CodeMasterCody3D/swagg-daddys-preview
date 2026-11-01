@@ -156,3 +156,45 @@ test('VIN history paginates across all matching requests without including anoth
     assert.equal(new Set([...first.items,...second.items].map(i=>i.id)).size,52);
   } finally {store.close();}
 });
+
+test('owner can trash and restore a request without losing notes, completion date, or attachments',async()=>{
+  const store=localStore();const api=createApi({store,env});const vin='1HGCM82633A004352';
+  try {
+    const saved=await (await api(request('/requests',{method:'POST',body:form(fixture({vin}),jpeg())}),{ip:'delete-test'})).json();
+    const path='/requests/'+saved.reference; const auth=await login(api);
+    let item=await (await api(request(path,auth))).json();
+    item=await (await api(request(path,{...auth,method:'PATCH',body:{revision:item.revision,status:'Completed',notes:'Test repair record.'}}))).json();
+    const completedAt=item.completedAt;const revision=item.revision;
+    assert.equal((await api(request(path,{method:'DELETE',body:{revision}}))).status,401);
+    assert.equal((await api(request(path,{cookie:auth.cookie,method:'DELETE',body:{revision}}))).status,403);
+    assert.equal((await api(request(path,{...auth,method:'DELETE',origin:'https://evil.example',body:{revision}}))).status,403);
+    assert.equal((await api(request(path,{...auth,method:'DELETE',body:{revision:'stale'}}))).status,409);
+    const deleted=await api(request(path,{...auth,method:'DELETE',body:{revision}}));assert.equal(deleted.status,200);item=await deleted.json();assert.ok(item.deletedAt);
+    assert.equal((await (await api(request('/requests',auth))).json()).items.length,0);
+    assert.equal((await (await api(request('/vehicles/'+vin+'/history',auth))).json()).items.length,0);
+    const trash=await (await api(request('/requests?view=trash',auth))).json();assert.equal(trash.items.length,1);assert.equal(trash.items[0].notes,'Test repair record.');
+    assert.equal((await api(request(path,{...auth,method:'PATCH',body:{revision:item.revision,status:'New',notes:''}}))).status,409);
+    assert.equal((await api(request(path+'/restore',{method:'POST',body:{revision:item.revision}}))).status,401);
+    assert.equal((await api(request(path+'/restore',{...auth,method:'POST',body:{revision}}))).status,409);
+    const restored=await api(request(path+'/restore',{...auth,method:'POST',body:{revision:item.revision}}));assert.equal(restored.status,200);item=await restored.json();
+    assert.equal(item.deletedAt,undefined);assert.equal(item.notes,'Test repair record.');assert.equal(item.completedAt,completedAt);assert.equal(item.media.length,1);
+    assert.equal((await api(request(path+'/media/'+item.media[0].id,auth))).status,200);
+    assert.equal((await (await api(request('/requests?view=trash',auth))).json()).items.length,0);
+    assert.equal((await (await api(request('/vehicles/'+vin+'/history',auth))).json()).items.length,1);
+  } finally {store.close();}
+});
+test('active and Trash pagination skip excluded records without hiding older matches',async()=>{
+  const store=localStore();const api=createApi({store,env});
+  try {
+    for(let i=0;i<104;i++) {
+      const id=(1793458800000+i)+'-00000000-0000-4000-8000-000000000001';
+      await store.put('requests/'+id,{id,status:'New',...(i%2?{deletedAt:new Date().toISOString()}:{})});
+    }
+    const auth=await login(api);
+    for(const view of ['active','trash']) {
+      const first=await (await api(request('/requests?view='+view,auth))).json();assert.equal(first.items.length,50);assert.ok(first.next);
+      const last=await (await api(request('/requests?view='+view+'&before='+first.next,auth))).json();assert.equal(last.items.length,2);assert.equal(last.next,null);
+      assert.ok([...first.items,...last.items].every(i=>Boolean(i.deletedAt)===(view==='trash')));
+    }
+  } finally {store.close();}
+});

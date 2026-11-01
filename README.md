@@ -49,3 +49,5 @@ The APK comes after deployed backend verification. It should load `/owner/` over
 All urgency levels accept the existing limit of 3 files / 4 MiB combined / at most 1 video. Optional VIN/specifications persist with requests and appear in the private owner dashboard. VIN history is owner-authenticated, paginated, and contains this business’s requests and notes, with completed jobs distinguished. Older records without a VIN are left intact and are not guessed or matched by customer name.
 
 Do not merge to production until approved. A preview must set `window.SWAGG_PREVIEW = true` before intake.js, so test submissions remain local copy-only and do not contact the production backend.
+
+Owner requests can be moved to Trash and restored. Delete requires confirmation in the dashboard and a current revision; authentication, same-origin checks, and CSRF protection apply. Trashed records disappear from active lists and VIN history. Notes, status, completion dates, and attachments remain recoverable. This is soft deletion, not permanent data erasure.
