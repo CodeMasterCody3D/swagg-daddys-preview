@@ -72,6 +72,7 @@ async function readPhoto() {
   try {
     const result=await scanVinPhoto(sourcePhoto,{rectangle:crop,progress:text=>{if(current===scanId)status.textContent=text;}});
     if(current!==scanId)return;
+    if(result.candidates.length===1 && validVin(result.candidates[0].vin)){applyScannedVin(result.candidates[0].vin);return;}
     suggestions=result.candidates;$('vin-suggestions').replaceChildren(...suggestions.map((candidate,i)=>new Option(candidate.vin+(candidate.corrected?' — check characters':''),String(i))));
     $('vin-suggestions').hidden=suggestions.length<2;
     $('vin-raw-text').textContent=result.rawText || 'No readable text was returned.';
@@ -100,10 +101,12 @@ $('vin-photo').addEventListener('change',selectPhoto);$('vin-upload').addEventLi
 $('vin-retry').addEventListener('click',readPhoto);
 function clearPhoto(){scanId++;sourcePhoto=null;crop=null;cropStart=null;preview.width=1;preview.height=1;$('vin-photo-tools').hidden=true;$('vin-candidate').hidden=true;$('vin-raw-text').textContent='';$('vin-recognized').value='';suggestions=[];}
 $('vin-clear-photo').addEventListener('click',()=>{clearPhoto();status.textContent='Photo cleared. You can take another photo or type your VIN.';});
-$('vin-use').addEventListener('click',()=> {
-  const vin=normalizeVin($('vin-recognized').value);
+function applyScannedVin(value) {
+  clearTimeout(timer);
+  const vin=normalizeVin(value);
   clearDecode();input.value=vin;clearPhoto();
   if(validVin(vin))void decode();
   else status.textContent='VIN kept as entered. You can enter vehicle details manually or send the request as it is.';
-});
+}
+$('vin-use').addEventListener('click',()=>applyScannedVin($('vin-recognized').value));
 $('service-form').addEventListener('reset',()=>{clearTimeout(timer);clearDecode();clearPhoto();input.setCustomValidity('');status.textContent='';lookup.disabled=false;});
