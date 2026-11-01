@@ -101,8 +101,7 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
         headers.set('Access-Control-Allow-Headers', 'Content-Type');
         return new Response(null, { status: 204, headers });
       }
-      if (route === '/health' && request.method === 'GET') return json({ ready: configured(env), googleLens:configured(env) && env.GOOGLE_LENS_ENABLED === 'true' });
-      if (!configured(env)) fail(503, 'Owner access has not been activated yet. Please call or text 205-492-8772.');
+      if (route === '/health' && request.method === 'GET') return json({ ready: configured(env), googleLens:env.GOOGLE_LENS_ENABLED === 'true' });
 
       if (publicLens && request.method === 'POST') {
         if (!origin || !allowedPublic.includes(origin)) fail(403, 'Origin not allowed.');
@@ -130,6 +129,8 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
           return json({error:message,code},503);
         }
       }
+
+      if (!configured(env)) fail(503, 'Owner access has not been activated yet. Please call or text 205-492-8772.');
 
       if (route === '/login' && request.method === 'POST') {
         sameOrigin(request);

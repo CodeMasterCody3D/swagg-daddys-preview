@@ -29,6 +29,18 @@ test('photo endpoint returns candidates without a login and saves no image, VIN 
   } finally {store.close();}
 });
 
+test('enabled Lens recognition works independently of owner-login configuration',async()=>{
+  const store=localStore();let calls=0;
+  try {
+    const api=createApi({store,env:{GOOGLE_LENS_ENABLED:'true'},lensReader:async()=>{calls++;return result;}});
+    const health=await(await api(new Request(origin+'/api/health'))).json();
+    assert.deepEqual(health,{ready:false,googleLens:true});
+    const response=await api(request(),{ip:'preview-without-owner'});
+    assert.equal(response.status,200);assert.deepEqual(await response.json(),result);assert.equal(calls,1);
+    assert.equal((await api(new Request(origin+'/api/requests'))).status,503);
+  } finally {store.close();}
+});
+
 test('disabled feature, missing consent, foreign origins and spoofed images do not call Google',async()=>{
   const cases=[
     [{env:{...env,GOOGLE_LENS_ENABLED:'false'}},{},503],
