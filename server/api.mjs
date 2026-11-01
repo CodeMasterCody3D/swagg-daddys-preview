@@ -1,6 +1,7 @@
 import { normalizeVin, validVin, specFields } from '../vin-core.js';
 import { randomUUID } from 'node:crypto';
 import { findManuals, manualResponse } from './manuals.mjs';
+import { LensReadError, MAX_LENS_PHOTO_BYTES, readGoogleVinPhoto } from './lens.mjs';
 import { configured, cookieValue, digest, sessionCookie, SESSION_MS, token, verifyPassword } from './auth.mjs';
 
 export const MAX_MEDIA_BYTES = 4 * 1024 * 1024;
@@ -19,8 +20,8 @@ const customerText = (value,max) => typeof value === 'string' ? value.trim().sli
 const safeName = value => value.replace(/[^a-zA-Z0-9._ -]/g, '_').slice(0, 100) || 'attachment';
 const publicRecord = r => r; // Returned only after session authorization; never on public submission.
 
-async function limitedBody(request, max) {
-  if (Number(request.headers.get('content-length') || 0) > max) fail(413, 'Files are too large. Keep all attachments under 4 MB combined.');
+async function limitedBody(request, max, message = 'Files are too large. Keep all attachments under 4 MB combined.') {
+  if (Number(request.headers.get('content-length') || 0) > max) fail(413, message);
   const reader = request.body?.getReader();
   if (!reader) return new Uint8Array();
   const chunks = []; let total = 0;
@@ -28,7 +29,7 @@ async function limitedBody(request, max) {
     const { done, value } = await reader.read();
     if (done) break;
     total += value.byteLength;
-    if (total > max) { await reader.cancel(); fail(413, 'Files are too large. Keep all attachments under 4 MB combined.'); }
+    if (total > max) { await reader.cancel(); fail(413, message); }
     chunks.push(value);
   }
   return Buffer.concat(chunks);
@@ -51,7 +52,7 @@ function validMedia(bytes, mime) {
 }
 
 // The adapter uses conditional writes, so rate limits and owner edits are safe across function instances.
-export function createApi({ store, env = process.env, now = Date.now }) {
+export function createApi({ store, env = process.env, now = Date.now, lensReader = readGoogleVinPhoto }) {
   async function throttle(key, limit, windowMs) {
     for (let attempt = 0; attempt < 6; attempt++) {
       const entry = await store.get('limits/' + key);
@@ -85,8 +86,9 @@ export function createApi({ store, env = process.env, now = Date.now }) {
     const allowedPublic = [url.origin, ...(env.PUBLIC_SITE_ORIGINS || 'https://codemastercody3d.github.io,https://swaggdaddys.com,https://www.swaggdaddys.com').split(',').map(v => v.trim())];
     const publicIntake = route === '/requests' && ['POST','OPTIONS'].includes(request.method);
     const publicHealth = route === '/health' && ['GET','OPTIONS'].includes(request.method);
+    const publicLens = route === '/vin/photo' && ['POST','OPTIONS'].includes(request.method);
     const headers = new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Vary': 'Origin', 'Referrer-Policy': 'no-referrer' });
-    if ((publicIntake || publicHealth) && allowedPublic.includes(origin)) headers.set('Access-Control-Allow-Origin', origin);
+    if ((publicIntake || publicHealth || publicLens) && allowedPublic.includes(origin)) headers.set('Access-Control-Allow-Origin', origin);
     const json = (value, status = 200, extra = {}) => {
       const h = new Headers(headers); h.set('Content-Type', 'application/json');
       for (const [key,value] of Object.entries(extra)) h.set(key, value);
@@ -94,12 +96,40 @@ export function createApi({ store, env = process.env, now = Date.now }) {
     };
     try {
       if (request.method === 'OPTIONS') {
-        if ((!publicIntake && !publicHealth) || !allowedPublic.includes(origin)) fail(403, 'Origin not allowed.');
+        if ((!publicIntake && !publicHealth && !publicLens) || !allowedPublic.includes(origin)) fail(403, 'Origin not allowed.');
         headers.set('Access-Control-Allow-Methods', publicHealth ? 'GET, OPTIONS' : 'POST, OPTIONS');
         headers.set('Access-Control-Allow-Headers', 'Content-Type');
         return new Response(null, { status: 204, headers });
       }
-      if (route === '/health' && request.method === 'GET') return json({ ready: configured(env) });
+      if (route === '/health' && request.method === 'GET') return json({ ready: configured(env), googleLens:env.GOOGLE_LENS_ENABLED === 'true' });
+
+      if (publicLens && request.method === 'POST') {
+        if (!origin || !allowedPublic.includes(origin)) fail(403, 'Origin not allowed.');
+        if (env.GOOGLE_LENS_ENABLED !== 'true') fail(503, 'Google Lens is not available. Choose a clear VIN barcode photo or type the VIN.');
+        await throttle('lens-' + digest(context.ip || 'unknown'), 5, 15 * 60 * 1000);
+        await throttle('lens-global', 60, 60 * 60 * 1000);
+        if (!request.headers.get('content-type')?.startsWith('multipart/form-data;')) fail(415, 'A VIN photo is required.');
+        const bytes = await limitedBody(request, MAX_LENS_PHOTO_BYTES + 16384, 'The VIN photo is too large. Crop it and retry.');
+        let form;
+        try { form = await new Request(request.url, {method:'POST',headers:{'Content-Type':request.headers.get('content-type')},body:bytes}).formData(); }
+        catch { fail(400, 'The VIN photo could not be read.'); }
+        if (form.get('google_consent') !== 'yes') fail(400, 'Use the VIN photo scanner after reviewing the Google Lens notice.');
+        const files = form.getAll('photo'); const photo = files[0];
+        if (files.length !== 1 || !photo || typeof photo === 'string' || !photo.size) fail(400, 'Choose one VIN photo.');
+        if (photo.size > MAX_LENS_PHOTO_BYTES) fail(413, 'The VIN photo is too large. Crop it and retry.');
+        const data = await photo.arrayBuffer();
+        if (!['image/jpeg','image/png','image/webp'].includes(photo.type) || !validMedia(data, photo.type)) fail(415, 'Use a JPG, PNG, or WebP VIN photo.');
+        try { return json(await lensReader(data)); }
+        catch (error) {
+          const code = error instanceof LensReadError ? error.code : 'unavailable';
+          const message = code === 'verification'
+            ? 'Google requires verification. This reader has stopped. Choose a clear VIN barcode photo or type the VIN.'
+            : code === 'busy' ? 'Google is busy. Choose a clear VIN barcode photo or type the VIN.'
+            : 'Google could not read this photo. Choose a clear VIN barcode photo, select the VIN area and retry, or type the VIN.';
+          return json({error:message,code},503);
+        }
+      }
+
       if (!configured(env)) fail(503, 'Owner access has not been activated yet. Please call or text 205-492-8772.');
 
       if (route === '/login' && request.method === 'POST') {

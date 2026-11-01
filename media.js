@@ -1,5 +1,17 @@
 (() => {
   const media=document.getElementById('media'), list=document.getElementById('file-list');
+  const camera=document.getElementById('media-camera');
+  document.getElementById('media-camera-button').addEventListener('click',()=>camera.click());
+  camera.addEventListener('change',()=>{
+    const photo=camera.files[0];
+    if(!photo)return;
+    const selection=new DataTransfer();
+    for(const file of media.files)selection.items.add(file);
+    selection.items.add(photo);
+    media.files=selection.files;
+    camera.value='';
+    media.dispatchEvent(new Event('change',{bubbles:true}));
+  });
   let generation=0;
   window.SWAGG_MEDIA_READY=Promise.resolve({files:[],warnings:[]});
   async function browserPhoto(file,budget) {
@@ -41,5 +53,5 @@
     const current=++generation;const files=[...media.files];list.textContent=files.length?'Preparing your photos…':'No files selected.';
     window.SWAGG_MEDIA_READY=prepare(files).then(result=>{if(current===generation)list.textContent=[result.files.length?result.files.map(f=>f.name).join(' • '):'No files attached.',result.optimized.length?'Photos optimized automatically: '+(result.sourceBytes/1024/1024).toFixed(1)+' MB selected → '+(result.files.reduce((sum,file)=>sum+file.size,0)/1024/1024).toFixed(1)+' MB ready to send.':'',...result.warnings].join(' ');return result;});
   });
-  document.getElementById('service-form').addEventListener('reset',()=>{generation++;window.SWAGG_MEDIA_READY=Promise.resolve({files:[],warnings:[]});list.textContent='No files selected.';});
+  document.getElementById('service-form').addEventListener('reset',()=>{generation++;camera.value='';window.SWAGG_MEDIA_READY=Promise.resolve({files:[],warnings:[]});list.textContent='No files selected.';});
 })();

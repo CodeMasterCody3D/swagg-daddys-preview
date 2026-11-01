@@ -1,0 +1,6 @@
+{
+  "name": "google-lens-bridge-experiment",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "node server.mjs" }
+}

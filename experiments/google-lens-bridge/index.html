@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Google Lens connection test</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #eef2ef; color: #172c22; font: 18px/1.5 system-ui, sans-serif; }
+  main { max-width: 1100px; margin: auto; padding: 28px; }
+  h1 { font-size: 30px; margin: 0 0 8px; }
+  p { margin: 8px 0 18px; }
+  .test { background: white; border: 1px solid #ced8d1; border-radius: 12px; padding: 20px; margin-top: 20px; }
+  label { display: block; font-weight: 700; }
+  input, textarea, select { width: min(100%, 650px); padding: 12px; font: inherit; border: 1px solid #789084; border-radius: 6px; }
+  textarea { display: block; min-height: 80px; }
+  button { display: block; margin: 14px 0; padding: 12px 18px; border: 0; border-radius: 6px; background: #174d35; color: white; font: inherit; cursor: pointer; }
+  output { display: block; padding: 12px; background: #f4f6f4; white-space: pre-wrap; overflow-wrap: anywhere; }
+  iframe { width: 100%; height: 340px; border: 1px solid #b5c3ba; }
+  .note { font-size: 15px; color: #456052; }
+</style>
+<main>
+  <h1>Google Lens connection test</h1>
+  <p>Local experiment: can this page read text from Google's embedded image-search page?</p>
+  <p class="note">This test sends no VIN or photo. It does not change the live scanner or browser security settings.</p>
+  <section class="test">
+    <h2>Response format and transfer test</h2>
+    <p id="prompt"></p>
+    <label for="source">Test source</label>
+    <select id="source">
+      <option value="sample">Manual sample</option>
+      <option value="retained">Retained Google result via development browser controller</option>
+    </select>
+    <p class="note">The controller can supply text from its own browser. A customer-facing Google connection has not been implemented.</p>
+    <label for="reply">Reader reply under test</label>
+    <textarea id="reply">1HGCM82633A004352</textarea>
+    <button id="parse" type="button">Parse reply</button>
+    <output id="parsed" aria-live="polite">No sample parsed.</output>
+  </section>
+  <section class="test">
+    <label for="vin">VIN parsed from the test reply</label>
+    <input id="vin" readonly placeholder="No result returned">
+    <button id="read" type="button">Test reading the embedded result</button>
+    <output id="status" aria-live="polite">Loading Google's page…</output>
+  </section>
+  <section class="test">
+    <h2>Google image-search frame</h2>
+    <p>The direct frame test reached Google's unusual-traffic verification page and raised a cross-origin SecurityError. Further Google requests are disabled in this experiment.</p>
+  </section>
+</main>
+<script type="module">
+  import { parseVinReply, vinPrompt } from './reply.mjs';
+  const status = document.getElementById('status');
+  document.getElementById('prompt').textContent = vinPrompt;
+  status.textContent = 'Observed: SecurityError when reading Google’s cross-origin frame. No live connection is active.';
+  document.getElementById('read').disabled = true;
+  document.getElementById('reply').addEventListener('input', () => {
+    document.getElementById('vin').value = '';
+    document.getElementById('parsed').textContent = 'Reply changed. Parse it to produce a candidate.';
+  });
+  document.getElementById('parse').addEventListener('click', () => {
+    const result = parseVinReply(document.getElementById('reply').value);
+    document.getElementById('vin').value = result.vin || '';
+    document.getElementById('parsed').textContent = result.status === 'candidate'
+      ? `Candidate VIN: ${result.vin}. Format accepted; compare it with the photo before use.`
+      : result.status === 'unreadable' ? 'No VIN: the reader reported uncertainty.'
+      : 'Rejected: reply must be exactly one complete VIN or UNREADABLE.';
+  });
+</script>
+</html>
