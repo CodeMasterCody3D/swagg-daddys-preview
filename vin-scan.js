@@ -21,12 +21,14 @@ export async function photoCanvas(file) {
   } catch {throw new Error('This image could not be opened. Choose a JPG or PNG photo, or enter the VIN manually.');}
   finally {URL.revokeObjectURL(url);}
 }
-export function cropCanvas(source,rectangle) {
+export function cropCanvas(source,rectangle,{highQuality=false}={}) {
   const canvas=document.createElement('canvas');
   const r=rectangle || {x:0,y:0,width:source.width,height:source.height};
   const scale=Math.min(3,Math.max(1,1800/r.width),Math.sqrt(4500000/(r.width*r.height)));
   canvas.width=Math.round(r.width*scale)+40;canvas.height=Math.round(r.height*scale)+40;
-  const ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(source,r.x,r.y,r.width,r.height,20,20,canvas.width-40,canvas.height-40);return canvas;
+  const ctx=canvas.getContext('2d');
+  if(highQuality)ctx.imageSmoothingQuality='high';
+  ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(source,r.x,r.y,r.width,r.height,20,20,canvas.width-40,canvas.height-40);return canvas;
 }
 function enhanced(source) {
   const canvas=document.createElement('canvas');canvas.width=source.width;canvas.height=source.height;
@@ -46,13 +48,20 @@ export async function scanVinBarcodes(source,{rectangle=null,progress=()=>{}}={}
   try {
     await loadScript(asset('zxing/reader.js'));
     window.ZXingWASM.prepareZXingModule({overrides:{locateFile:path=>asset('zxing/'+path)}});
-    const results=await window.ZXingWASM.readBarcodes(canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height),{formats:['Code39','Code128','Code93','PDF417','DataMatrix','QRCode'],tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:8});
-    for(const result of results) {
-      raw.push('Barcode ('+result.format+'): '+result.text);
-      for(const candidate of scannedVins(result.text,{barcode:true}))candidates.set(candidate.vin,{...candidate,method:'barcode'});
+    for(let pass=0;pass<2;pass++) {
+      if(pass)progress('Retrying VIN barcodes with enhanced image scaling…');
+      const image=pass?cropCanvas(source,rectangle,{highQuality:true}):canvas;
+      const results=await window.ZXingWASM.readBarcodes(image.getContext('2d').getImageData(0,0,image.width,image.height),{formats:['Code39','Code128','Code93','PDF417','DataMatrix','QRCode'],tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:8});
+      for(const result of results) {
+        raw.push('Barcode ('+result.format+'): '+result.text);
+        for(const candidate of scannedVins(result.text,{barcode:true}))candidates.set(candidate.vin,{...candidate,method:'barcode'});
+      }
+      // A nearby inventory barcode (for example "VB") must not prevent the
+      // enhanced pass from finding the vehicle's separate VIN barcode.
+      if(candidates.size)break;
     }
   } catch {warnings.push('The barcode reader was unavailable.');}
-  return {candidates:[...candidates.values()],rawText:raw.join('\n'),warnings};
+  return {candidates:[...candidates.values()],rawText:[...new Set(raw)].join('\n'),warnings};
 }
 
 export async function scanVinText(source,{rectangle=null,progress=()=>{}}={}) {

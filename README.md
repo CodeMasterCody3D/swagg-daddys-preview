@@ -85,3 +85,8 @@ Verification responses, rate limits, and unexpected HTML stop the request withou
 Validation on November 1, 2026: all 45 tests and the static build pass. Routing tests verify that barcode success never invokes Google, barcode misses automatically invoke Google, ambiguous barcode VINs remain review choices, unavailable Google uses local text, and Google verification errors do not retry. Protocol integration tests still simulate Google's response; the real recognition confirmation above came from the user's manual test on the deployed preview.
 
 The optional service attachments also have a separate **Take photo** button alongside **Choose Files**. It uses native rear-camera capture where the browser supports it, preserves previously selected attachments, and uses the same photo preparation and upload limits.
+
+
+### Barcode scaling follow-up
+
+A supplied Honda door-label image reproduced a barcode miss: default bilinear enlargement returned only an unrelated small Data Matrix containing `VB`, while higher-quality enlargement decoded the long Code 39 VIN barcode. The reader now retains its original barcode pass and adds a high-quality scaling pass before Google fallback. An unrelated barcode does not stop that second pass. A persistent message identifies whether the applied VIN came from a barcode, Google Lens, or local text recognition. The supplied photo is used only for local diagnosis and is not included in this repository.

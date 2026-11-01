@@ -4,6 +4,7 @@ import { normalizeVin, validVin, decodedVehicle } from './vin-core.js';
 
 const $ = id => document.getElementById(id);
 const input = $('vin'), status = $('vin-status'), lookup = $('vin-lookup');
+const scanSource=$('vin-scan-source');
 let timer, revision = 0, abort, scanBusy = false;
 let lensApi='/api';
 if(location.hostname.endsWith('github.io')) {
@@ -26,6 +27,7 @@ function clearDecode() {
   $('request-result').hidden=true;
 }
 input.addEventListener('input', () => {
+  scanSource.textContent='';
   clearTimeout(timer); clearDecode(); input.value=normalizeVin(input.value); input.setCustomValidity('');
   status.textContent = input.value ? 'Enter all 17 VIN characters. You can also enter vehicle details manually.' : '';
   if (validVin(input.value)) timer=setTimeout(decode,600);
@@ -82,6 +84,7 @@ let suggestions=[];
 $('vin-suggestions').addEventListener('change',()=>reviewCandidate(suggestions[Number($('vin-suggestions').value)]));
 async function readPhoto() {
   if(!sourcePhoto||scanBusy)return;
+  scanSource.textContent='';
   const current=++scanId;scanBusy=true;$('vin-candidate').hidden=true;
   $('vin-retry-status').append(status);
   for(const id of ['vin-photo-button','vin-upload-button','vin-retry','vin-clear-photo'])$(id).disabled=true;
@@ -89,7 +92,7 @@ async function readPhoto() {
     const progress=text=>{if(current===scanId)status.textContent=text;};
     const result=await readVinPhoto(sourcePhoto,{rectangle:crop,api:lensApi,progress,googleAvailable:lensReady});
     if(current!==scanId)return;
-    if(result.candidates.length===1 && validVin(result.candidates[0].vin)){applyScannedVin(result.candidates[0].vin);return;}
+    if(result.candidates.length===1 && validVin(result.candidates[0].vin)){applyScannedVin(result.candidates[0].vin,result.candidates[0].method);return;}
     suggestions=result.candidates;$('vin-suggestions').replaceChildren(...suggestions.map((candidate,i)=>new Option(candidate.vin+(candidate.corrected?' — check characters':''),String(i))));
     $('vin-suggestions').hidden=suggestions.length<2;
     $('vin-raw-text').textContent=result.rawText || 'No readable text was returned.';
@@ -118,13 +121,14 @@ $('vin-upload-button').addEventListener('click',()=>$('vin-upload').click());
 $('vin-photo').addEventListener('change',selectPhoto);$('vin-upload').addEventListener('change',selectPhoto);
 $('vin-retry').addEventListener('click',readPhoto);
 function clearPhoto(){restoreVinStatus();scanId++;sourcePhoto=null;crop=null;cropStart=null;preview.width=1;preview.height=1;$('vin-photo-tools').hidden=true;$('vin-candidate').hidden=true;$('vin-raw-text').textContent='';$('vin-recognized').value='';suggestions=[];}
-$('vin-clear-photo').addEventListener('click',()=>{clearPhoto();status.textContent='Photo cleared. You can take another photo or type your VIN.';});
-function applyScannedVin(value) {
+$('vin-clear-photo').addEventListener('click',()=>{clearPhoto();scanSource.textContent='';status.textContent='Photo cleared. You can take another photo or type your VIN.';});
+function applyScannedVin(value,method='') {
   clearTimeout(timer);
   const vin=normalizeVin(value);
   clearDecode();input.value=vin;clearPhoto();
+  scanSource.textContent=method==='barcode'?'VIN read from the barcode on your device.':method==='google-lens'?'VIN read by Google Lens after the barcode checks.':method==='text'?'VIN read from printed text on your device.':'';
   if(validVin(vin))void decode();
   else status.textContent='VIN kept as entered. You can enter vehicle details manually or send the request as it is.';
 }
-$('vin-use').addEventListener('click',()=>applyScannedVin($('vin-recognized').value));
-$('service-form').addEventListener('reset',()=>{clearTimeout(timer);clearDecode();clearPhoto();input.setCustomValidity('');status.textContent='';lookup.disabled=false;});
+$('vin-use').addEventListener('click',()=>{const value=$('vin-recognized').value;applyScannedVin(value,suggestions.find(candidate=>candidate.vin===normalizeVin(value))?.method);});
+$('service-form').addEventListener('reset',()=>{clearTimeout(timer);clearDecode();clearPhoto();scanSource.textContent='';input.setCustomValidity('');status.textContent='';lookup.disabled=false;});
