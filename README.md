@@ -6,12 +6,20 @@ The customer site keeps its logo, card artwork, large Call Now button, Text Me l
 
 ## Owner inbox
 
+- VINs now appear prominently on request cards and at the top of request details, including the original entered value when different. A clickable VIN opens an owner-authenticated resolver for CHARM manuals using year, make, model, cylinder count, displacement and drive. The VIN is decoded independently through NHTSA when the manual link is opened, including for older requests without saved specifications. The VIN and customer information are not sent to CHARM. An exact engine match opens its listed manual; ambiguous matches offer choices, and unavailable manuals show an explicit browse fallback. This does not connect registration, owner databases, or CARFAX records.
+- Each request has tool-planning guidance with a suggested basic kit, relevant oil/brake/transmission prompts, and the vehicle-specific manual link. These suggestions are not a verified job tool inventory; exact sizes and manufacturer tools must be confirmed in the selected repair procedure. Registration, CARFAX integration, and an embedded AI chat are not implemented.
+
 - Password login with no public signup. Verification runs on the server using scrypt or PBKDF2-SHA256.
 - Customer list, search, status filter, private notes, and job status: New, Contacted, Scheduled, In progress, Completed, Cancelled.
 - Tap a customer's number or Call button to open a `tel:` link. Android chooses a compatible dialer; Google Voice availability depends on the device. The future wrapper must handle telephone and SMS links with Android intents, using `ACTION_DIAL` for calls rather than placing calls automatically.
 - GPS links open the shared vehicle location in Maps. Customers may decline GPS and enter an area instead.
 - Up to 3 supported files, including at most 1 short video, under **4 MiB combined after automatic photo preparation**. Original photos may be up to 25 MiB each. This stays below Netlify's effective binary function request limit. Supported types: JPG, PNG, GIF, WebP, MP4, MOV, WebM. The server checks file signatures and type.
 - Records and attachments require an authenticated owner session. Knowing the owner URL or spoofing a WebView user agent does not grant access.
+
+## Remaining requested work
+
+- In-page AI chat on both the customer form and private owner dashboard. The requested integration must stay inside the page, use no paid AI API, and support manual conversation; automatic hints/autofill are optional. It is not implemented. Duck.ai currently sends `X-Frame-Options: SAMEORIGIN` and a CSP `frame-ancestors` restricted to DuckDuckGo domains, so an ordinary embed on this domain is blocked. A supported embedded provider or local model remains to be selected; do not represent an external chat link as this feature.
+- Android APK and push-notification rollout are deferred until after website changes. The notification implementation is preserved on `preview/owner-notifications`; its Android build and four device tests passed, but live FCM delivery still requires Firebase configuration and a signed app update.
 
 ## Hosting and activation
 

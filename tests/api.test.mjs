@@ -11,6 +11,21 @@ const origin = 'https://swaggdaddys.com';
 const password = 'test-only-long-password';
 const passwordHash = await hashPassword(password);
 const env = { OWNER_PASSWORD_HASH:passwordHash, OWNER_USERNAME:'owner' };
+test('owner request lists and details retain every supplied field including raw VIN, specifications and GPS',async()=>{
+  const store=localStore();const api=createApi({store,env});
+  const vin='1HGCM82633A004352';const specs={year:'2003',make:'HONDA',model:'Accord',cylinders:'6',displacement:'3.0'};
+  try{
+    const values=fixture({vin,vin_specs:JSON.stringify(specs),latitude:'33',longitude:'-87',location_accuracy:'20'});
+    const saved=await(await api(request('/requests',{method:'POST',body:form(values,jpeg())}),{ip:'all-fields'})).json();
+    const auth=await login(api);
+    const list=await(await api(request('/requests',auth))).json();const detail=await(await api(request('/requests/'+saved.reference,auth))).json();
+    for(const record of [list.items[0],detail]){
+      for(const field of ['name','phone','vehicle','location','urgency','issue','details','vin'])assert.equal(record[field],values[field],field);
+      assert.equal(record.vinSubmitted,vin);assert.deepEqual(record.vehicleSpecs,specs);assert.deepEqual(record.gps,{latitude:33,longitude:-87,accuracy:20});assert.equal(record.media.length,1);assert.ok(record.consentAt);
+    }
+    assert.equal((await api(request('/requests/'+saved.reference+'/manuals'))).status,401);
+  }finally{store.close();}
+});
 const fixture = (overrides = {}) => ({ name:'Test customer', phone:'(205) 555-0100', vehicle:'2015 Ford F-150', location:'Test service area', urgency:'Flexible — I can wait', issue:'Vehicle won’t start', details:'Test request only.', location_consent:'yes', ...overrides });
 const jpeg = () => new Blob([Buffer.from([255,216,255,224,0,16,74,70,73,70,255,217])], { type:'image/jpeg' });
 function form(values = fixture(), file) { const data = new FormData(); for (const [key,value] of Object.entries(values)) data.set(key, value); if (file) data.append('issue_media',file,'test.jpg'); return data; }

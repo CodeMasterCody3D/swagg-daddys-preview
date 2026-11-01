@@ -1,5 +1,6 @@
 import { normalizeVin, validVin, specFields } from '../vin-core.js';
 import { randomUUID } from 'node:crypto';
+import { findManuals, manualResponse } from './manuals.mjs';
 import { configured, cookieValue, digest, sessionCookie, SESSION_MS, token, verifyPassword } from './auth.mjs';
 
 export const MAX_MEDIA_BYTES = 4 * 1024 * 1024;
@@ -199,6 +200,14 @@ export function createApi({ store, env = process.env, now = Date.now }) {
           }
         }
         return json({ items:matches.slice(0,50), next:matches.length>50 ? matches[49].id : null, statuses:STATUSES });
+      }
+      const manualMatch=route.match(/^\/requests\/(\d{13}-[0-9a-f-]{36})\/manuals$/);
+      if(manualMatch&&request.method==='GET') {
+        const entry=await store.get('requests/'+manualMatch[1]);
+        if(!entry)fail(404,'Request not found.');
+        await throttle('manuals-'+digest(auth.key),30,60*1000);
+        try{return manualResponse(await findManuals(entry.value));}
+        catch{return manualResponse({vehicle:entry.value.vehicle,specs:entry.value.vehicleSpecs||{},options:[],browseUrl:'https://charm.li/',message:'The automatic manual lookup is temporarily unavailable. Browse CHARM to select this vehicle.'});}
       }
       const historyMatch = route.match(/^\/vehicles\/([A-HJ-NPR-Z0-9]{17})\/history$/);
       if (historyMatch && request.method === 'GET') {
