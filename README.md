@@ -130,3 +130,18 @@ The supplied camera captures reproduce barcode failures with both ZXing and a se
 Only exact, uncorrected text candidates with a matching VIN check digit qualify, and two matching fresh readings are still required before auto-fill. The UI identifies a printed-text result as text, never as a successful barcode decode. Barcode success takes precedence and does not load the text worker. There is one reader operation at a time; the text worker is reused for the session and closed on stop or match. A text-worker failure leaves barcode scanning available. Cancellation prevents late text results from changing the form. The captured-photo/Google Lens route is unchanged.
 
 Validation: 71 automated checks and the build pass. In browser replay, a supplied 959×512 camera frame confirms `5J6YH287X8L000133` automatically from local printed text after two readings, without a photo-button click or Google. The existing barcode control confirms `1HGCV2F62JA012802` directly from the barcode with zero text checks. These checks do not prove that the unreadable bars were recovered or replace a physical-camera retest. Supplied photos and local QA routes are excluded from published assets.
+
+### Faster live VIN recognition
+
+The live reader now prepares its barcode engine while the camera opens, reads the first available frame immediately, and checks a candidate against the next fresh camera frame after 100 ms. After a miss, it chooses the sharpest of three samples 100 ms apart instead of waiting 1.5 seconds per reading. Unchanged video timestamps cannot count as separate confirmations. Only one decode runs at a time; camera startup retains its 10-second no-frame timeout. Cubic image preparation skips interpolation when the source and target dimensions already match, preserving the same pixels.
+
+Barcode passes, the three-miss threshold for local text, exact text/check-digit rules, two matching readings, cancellation, and the captured-photo Google Lens route are preserved. Faster polling does more work per second while searching; mobile performance and camera focus still need an actual-device check.
+
+Validation: 74 automated tests and the static build pass. Three browser replay runs per case, using the same images and real production readers, returned the same VINs before and after:
+
+| Saved-frame case | Before, median | After, median |
+| --- | ---: | ---: |
+| Readable barcode, 1440×1920 | 3,258 ms | 331 ms |
+| Printed-text fallback, 959×512 | 12,136 ms | 6,050 ms |
+
+Timing runs from starting the replay scanner through the second confirmed VIN reading. It excludes physical camera permission/focus, mobile network loading, Google response time, and the subsequent vehicle lookup. The browser and dependencies were reused across runs, so these are controlled replay measurements rather than a cold-start or physical-phone speed guarantee. Supplied images and the temporary timing page are not published.

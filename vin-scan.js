@@ -7,6 +7,9 @@ async function barcodeEngine(){
   if(!zxingReady)zxingReady=(async()=>{await loadScript(asset('zxing/reader.js'));await window.ZXingWASM.prepareZXingModule({overrides:{locateFile:path=>asset('zxing/'+path)},fireImmediately:true});return window.ZXingWASM;})().catch(error=>{zxingReady=null;throw error;});
   return zxingReady;
 }
+// Start the existing local engine while the camera permission/preview opens.
+// A failed warm-up remains retryable when the first actual frame is read.
+export function prepareVinBarcodeReader(){return barcodeEngine();}
 function loadScript(url) {
   if (!loaded.has(url)) loaded.set(url,new Promise((resolve,reject)=>{
     const script=document.createElement('script'); script.src=url;

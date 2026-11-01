@@ -9,7 +9,7 @@ function fixture(options={}){
   const queue=[],matches=[],errors=[],delays=[];let stopped=0,calls=0,constraints;
   const stream={getTracks:()=>[{stop(){stopped++;}}]};
   const video={readyState:2,videoWidth:1920,videoHeight:1080,srcObject:null,async play(){},pause(){}};
-  const controller=createLiveVinScanner({video,getMedia:async c=>{constraints=c;return stream;},readFrame:async()=>{calls++;return candidate();},capture:()=>({frame:true}),score:()=>1,samplesPerRead:1,schedule:(fn,delay)=>{queue.push(fn);delays.push(delay);return fn;},cancel:fn=>{const index=queue.indexOf(fn);if(index>=0)queue.splice(index,1);},onMatch:(v,r)=>matches.push({vin:v,result:r}),onError:e=>errors.push(e),...options});
+  const controller=createLiveVinScanner({video,getMedia:async c=>{constraints=c;return stream;},prepare:async()=>{},readFrame:async()=>{calls++;return candidate();},capture:()=>({frame:true}),score:()=>1,samplesPerRead:1,schedule:(fn,delay)=>{queue.push(fn);delays.push(delay);return fn;},cancel:fn=>{const index=queue.indexOf(fn);if(index>=0)queue.splice(index,1);},onMatch:(v,r)=>matches.push({vin:v,result:r}),onError:e=>errors.push(e),...options});
   return {controller,video,stream,queue,matches,errors,delays,get stopped(){return stopped;},get calls(){return calls;},get constraints(){return constraints;},async tick(){const fn=queue.shift();assert.ok(fn,'scheduled frame exists');await fn();}};
 }
 test('live camera requests rear video only, confirms two frames, then releases camera and fills once',async()=>{
@@ -23,18 +23,33 @@ test('a VIN that requires enhanced scanning can confirm on the next frame withou
   assert.deepEqual(passes,[true,true]);
   assert.equal(f.matches.length,1);assert.equal(f.matches[0].vin,vin);assert.equal(f.stopped,1);
 });
-test('three lightweight samples choose the sharpest frame for one barcode attempt per 1.5-second cycle',async()=>{
-  const samples=[{quality:5},{quality:20},{quality:3}],selected=[];
-  const f=fixture({samplesPerRead:3,capture:()=>samples.shift(),score:frame=>frame.quality,readFrame:async frame=>{selected.push(frame);return candidate();}});
-  await f.controller.start();await f.tick();await f.tick();assert.equal(selected.length,0);await f.tick();
-  assert.equal(selected.length,1);assert.equal(selected[0].quality,20);assert.ok(f.delays.every(delay=>delay===500));f.controller.stop();
+test('first frame reads immediately; after a miss a 300 ms burst chooses the sharpest sample',async()=>{
+  const samples=[{quality:1},{quality:5},{quality:20},{quality:3}],selected=[];
+  const f=fixture({samplesPerRead:3,capture:()=>samples.shift(),score:frame=>frame.quality,readFrame:async frame=>{selected.push(frame);return {candidates:[]};}});
+  await f.controller.start();assert.equal(f.delays[0],0);await f.tick();assert.equal(selected.length,1);
+  await f.tick();await f.tick();assert.equal(selected.length,1);await f.tick();
+  assert.equal(selected.length,2);assert.equal(selected[1].quality,20);assert.deepEqual(f.delays.slice(1,4),[100,100,100]);f.controller.stop();
+});
+test('a candidate confirms on the next fresh frame without waiting for another sampling burst',async()=>{
+  const f=fixture({samplesPerRead:3});await f.controller.start();await f.tick();assert.equal(f.matches.length,0);
+  assert.equal(f.delays.at(-1),100);await f.tick();assert.equal(f.matches.length,1);assert.equal(f.calls,2);
+});
+test('a repeated video timestamp cannot count as a second confirming camera frame',async()=>{
+  const f=fixture();f.video.currentTime=1;await f.controller.start();await f.tick();await f.tick();
+  assert.equal(f.calls,1);assert.equal(f.matches.length,0);f.video.currentTime=1.1;await f.tick();assert.equal(f.matches.length,1);
+});
+test('engine preparation overlaps camera permission and does not delay camera startup',async()=>{
+  const warm=deferred(),permission=deferred();const events=[];
+  const f=fixture({prepare:()=>{events.push('prepare');return warm.promise;},getMedia:()=>{events.push('camera');return permission.promise;}});
+  const start=f.controller.start();assert.deepEqual(events,['prepare','camera']);permission.resolve(f.stream);await start;
+  assert.equal(f.controller.active,true);f.controller.stop();warm.resolve();
 });
 test('sharpness ranks a crisp edge above a smoothed edge, without accepting a VIN from sharpness alone',()=>{
   const pixels=smooth=>{const width=24,height=12,data=new Uint8ClampedArray(width*height*4);for(let y=0;y<height;y++)for(let x=0;x<width;x++){const v=smooth?Math.min(255,Math.max(0,(x-7)*28)):(x<12?0:255);const i=(y*width+x)*4;data[i]=data[i+1]=data[i+2]=v;data[i+3]=255;}return {width,height,data};};
   assert.ok(frameSharpness(pixels(false))>frameSharpness(pixels(true)));assert.equal(frameSharpness({width:4,height:4,data:new Uint8ClampedArray(64)}),0);
 });
 test('a camera that never delivers frames stops with an explicit error',async()=>{
-  const f=fixture();f.video.readyState=0;await f.controller.start();for(let i=0;i<20;i++)await f.tick();
+  const f=fixture();f.video.readyState=0;await f.controller.start();for(let i=0;i<100;i++)await f.tick();
   assert.match(f.errors[0].message,/not delivering video frames/);assert.equal(f.controller.active,false);assert.equal(f.stopped,1);
 });
 test('closing during permission prevents a late grant reopening the camera',async()=>{
