@@ -4,6 +4,7 @@ import { normalizeVin, validVin, decodedVehicle } from './vin-core.js';
 const $ = id => document.getElementById(id);
 const input = $('vin'), status = $('vin-status'), lookup = $('vin-lookup');
 let timer, revision = 0, abort, scanBusy = false;
+function restoreVinStatus(){ $('vin-photo-tools').before(status); }
 function clearDecode() {
   revision++; abort?.abort(); lookup.disabled=false; $('vin-specs').value=''; $('vin-details').textContent='';
   // Clear only the auto-filled value; preserve customer-entered corrections.
@@ -17,6 +18,7 @@ input.addEventListener('input', () => {
   if (validVin(input.value)) timer=setTimeout(decode,600);
 });
 async function decode() {
+  restoreVinStatus();
   clearTimeout(timer);
   const vin=normalizeVin(input.value); input.value=vin;
   if (!validVin(vin)) { status.textContent='Check the 17-character VIN. VINs do not use I, O, or Q. You can leave it blank and enter the vehicle manually.'; return; }
@@ -68,6 +70,7 @@ $('vin-suggestions').addEventListener('change',()=>reviewCandidate(suggestions[N
 async function readPhoto() {
   if(!sourcePhoto||scanBusy)return;
   const current=++scanId;scanBusy=true;$('vin-candidate').hidden=true;
+  $('vin-retry-status').append(status);
   for(const id of ['vin-photo-button','vin-upload-button','vin-retry','vin-clear-photo'])$(id).disabled=true;
   try {
     const result=await scanVinPhoto(sourcePhoto,{rectangle:crop,progress:text=>{if(current===scanId)status.textContent=text;}});
@@ -85,6 +88,7 @@ async function readPhoto() {
 }
 async function selectPhoto(event) {
   const file=event.target.files[0];if(!file||scanBusy)return;
+  restoreVinStatus();
   event.target.value='';
   if(file.size>25*1024*1024||!file.type.startsWith('image/')){status.textContent='Choose a photo under 25 MB, or enter the VIN manually.';return;}
   const current=++scanId;scanBusy=true;
@@ -99,7 +103,7 @@ $('vin-photo-button').addEventListener('click',()=>$('vin-photo').click());
 $('vin-upload-button').addEventListener('click',()=>$('vin-upload').click());
 $('vin-photo').addEventListener('change',selectPhoto);$('vin-upload').addEventListener('change',selectPhoto);
 $('vin-retry').addEventListener('click',readPhoto);
-function clearPhoto(){scanId++;sourcePhoto=null;crop=null;cropStart=null;preview.width=1;preview.height=1;$('vin-photo-tools').hidden=true;$('vin-candidate').hidden=true;$('vin-raw-text').textContent='';$('vin-recognized').value='';suggestions=[];}
+function clearPhoto(){restoreVinStatus();scanId++;sourcePhoto=null;crop=null;cropStart=null;preview.width=1;preview.height=1;$('vin-photo-tools').hidden=true;$('vin-candidate').hidden=true;$('vin-raw-text').textContent='';$('vin-recognized').value='';suggestions=[];}
 $('vin-clear-photo').addEventListener('click',()=>{clearPhoto();status.textContent='Photo cleared. You can take another photo or type your VIN.';});
 function applyScannedVin(value) {
   clearTimeout(timer);
