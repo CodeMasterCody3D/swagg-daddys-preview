@@ -11,6 +11,11 @@ export async function readVinPhoto(source,{googleAvailable=false,...options}={},
   if(barcode.candidates.length)return barcode;
   const useGoogle=await googleAvailable;
   options.progress?.(useGoogle?'No complete VIN barcode found. Switching to Google Lens…':'No complete VIN barcode found. Reading printed text on your device…');
-  const result=await (useGoogle?readGoogle(source,options):readText(source,options));
-  return {...result,warnings:[...barcode.warnings,...result.warnings]};
+  try {
+    const result=await (useGoogle?readGoogle(source,options):readText(source,options));
+    return {...result,warnings:[...barcode.warnings,...result.warnings],barcodeCheck:barcode.diagnostics};
+  } catch(error) {
+    if(error&&typeof error==='object')error.barcodeCheck=barcode.diagnostics;
+    throw error;
+  }
 }

@@ -82,7 +82,7 @@ The feature is disabled unless the Functions environment sets `GOOGLE_LENS_ENABL
 
 Verification responses, rate limits, and unexpected HTML stop the request without an automatic retry. This endpoint does not have an interactive browser session in which a visitor could complete Google's checkbox. The earlier browser verification must not be worked around through alternate endpoints, cookies, or network changes.
 
-Validation on November 1, 2026: all 45 tests and the static build pass. Routing tests verify that barcode success never invokes Google, barcode misses automatically invoke Google, ambiguous barcode VINs remain review choices, unavailable Google uses local text, and Google verification errors do not retry. Protocol integration tests still simulate Google's response; the real recognition confirmation above came from the user's manual test on the deployed preview.
+Validation on November 1, 2026: all 49 tests and the static build pass. Routing tests verify that barcode success never invokes Google, barcode misses automatically invoke Google, ambiguous barcode VINs remain review choices, unavailable Google uses local text, and Google verification errors do not retry. Protocol integration tests still simulate Google's response; the real recognition confirmation above came from the user's manual test on the deployed preview.
 
 The optional service attachments also have a separate **Take photo** button alongside **Choose Files**. It uses native rear-camera capture where the browser supports it, preserves previously selected attachments, and uses the same photo preparation and upload limits.
 
@@ -90,3 +90,5 @@ The optional service attachments also have a separate **Take photo** button alon
 ### Barcode scaling follow-up
 
 A supplied Honda door-label image reproduced a barcode miss: default bilinear enlargement returned only an unrelated small Data Matrix containing `VB`, while higher-quality enlargement decoded the long Code 39 VIN barcode. The reader now retains its original barcode pass and adds a high-quality scaling pass before Google fallback. An unrelated barcode does not stop that second pass. A persistent message identifies whether the applied VIN came from a barcode, Google Lens, or local text recognition. The supplied photo is used only for local diagnosis and is not included in this repository.
+
+The enhanced pass now uses an explicit cubic pixel resampler, rather than the browser-dependent canvas quality hint. Direct tests of both supplied low-resolution copies and the higher-resolution working image recover their VINs. The image files are not included in the repository. Barcode check details retain image dimensions, completed passes, barcode payloads, and any engine-start failure so a Google fallback is distinguishable from a missed barcode.

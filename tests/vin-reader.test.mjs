@@ -48,3 +48,11 @@ test('Google verification errors stop after one attempt without a hidden retry',
   await assert.rejects(readVinPhoto({}, {googleAvailable:true},{barcode:async()=>result(),google:async()=>{calls++;throw new Error('Google requires verification.');},text:unexpected}),/requires verification/);
   assert.equal(calls,1);
 });
+
+test('barcode diagnostics survive both successful and failed Google fallback',async()=>{
+  const diagnostics={version:'cubic-2',status:'unavailable',passes:[],symbols:[],error:'Barcode engine could not start.'};
+  const barcode=async()=>({...result(),diagnostics});
+  const answer=await readVinPhoto({}, {googleAvailable:true},{barcode,google:async()=>result([vin]),text:unexpected});
+  assert.deepEqual(answer.barcodeCheck,diagnostics);
+  await assert.rejects(readVinPhoto({}, {googleAvailable:true},{barcode,google:async()=>{throw new Error('Google unavailable');},text:unexpected}),error=>error.barcodeCheck===diagnostics);
+});
