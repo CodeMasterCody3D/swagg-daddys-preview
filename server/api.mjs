@@ -1,4 +1,5 @@
 import { normalizeVin, validVin, specFields } from '../vin-core.js';
+import { createPushService, validDeviceId, clientNotificationConfig } from './push.mjs';
 import { randomUUID } from 'node:crypto';
 import { findManuals, manualResponse } from './manuals.mjs';
 import { createVehicleResearch } from './vehicle-research.mjs';
@@ -53,7 +54,7 @@ function validMedia(bytes, mime) {
 }
 
 // The adapter uses conditional writes, so rate limits and owner edits are safe across function instances.
-export function createApi({ store, env = process.env, now = Date.now, lensReader = readGoogleVinPhoto, research = createVehicleResearch() }) {
+export function createApi({ store, env = process.env, now = Date.now, lensReader = readGoogleVinPhoto, research = createVehicleResearch(), notifications = createPushService({store, env, now}) }) {
   async function throttle(key, limit, windowMs) {
     for (let attempt = 0; attempt < 6; attempt++) {
       const entry = await store.get('limits/' + key);
@@ -204,11 +205,12 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
         } catch (error) {
           await Promise.allSettled(saved.map(key => store.remove(key))); throw error;
         }
+        try { await notifications.notify(context.waitUntil?.bind(context)); } catch { console.error('Owner notification delivery unavailable'); }
         return json({ received: true, reference: record.id }, 201);
       }
 
       const auth = await session(request);
-      if (route === '/session' && request.method === 'GET') return json({ username: env.OWNER_USERNAME || 'owner', csrf: auth.csrf });
+      if (route === '/session' && request.method === 'GET') return json({ username: env.OWNER_USERNAME || 'owner', csrf: auth.csrf, notificationsReady: notifications.ready, notificationConfig: clientNotificationConfig(env) });
       const researchMatch=route.match(/^\/vehicles\/([A-HJ-NPR-Z0-9]{17})\/research$/);
       const researchDetail=route.match(/^\/research\/(safety|economy)\/(\d{1,8})$/);
       if((researchMatch||researchDetail)&&request.method==='GET') {
@@ -222,7 +224,17 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
       }
       if (route === '/logout' && request.method === 'POST') {
         await store.remove(auth.key);
+        await notifications.signOut(auth);
         return json({ signedOut: true }, 200, { 'Set-Cookie': sessionCookie('', 0) });
+      }
+      if (route === '/notifications/device' && ['POST','DELETE'].includes(request.method)) {
+        const body=await jsonBody(request,8192);
+        if(!validDeviceId(body?.id))fail(400,'Invalid notification device.');
+        if(request.method==='DELETE'){await notifications.remove(body.id);return json({enabled:false});}
+        if(!notifications.ready)fail(503,'Push notifications have not been connected yet.');
+        try { await notifications.register(body.id,body.token,auth); }
+        catch(error){fail(400,error.message);}
+        return json({enabled:true});
       }
       if (route === '/requests' && request.method === 'GET') {
         const before = url.searchParams.get('before');

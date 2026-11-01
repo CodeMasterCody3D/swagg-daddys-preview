@@ -45,6 +45,7 @@ public final class MainActivity extends Activity {
     private TextView errorMessage;
     private String retryUrl = NavigationPolicy.HOME;
     private boolean destroyed;
+    private OwnerPushController push;
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
@@ -114,6 +115,7 @@ public final class MainActivity extends Activity {
         content.addView(errorPanel, new FrameLayout.LayoutParams(-1, -1));
         root.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(root);
+        push = new OwnerPushController(this);
 
         if (Build.VERSION.SDK_INT >= 33) {
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
@@ -221,10 +223,12 @@ public final class MainActivity extends Activity {
         menu.getMenu().add(0, 2, 1, "Refresh");
         menu.getMenu().add(0, 3, 2, "Open in browser");
         menu.getMenu().add(0, 4, 3, "Text service upload link");
+        menu.getMenu().add(0, 5, 4, "Notifications");
         menu.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == 1) loadOwner(NavigationPolicy.HOME);
             else if (item.getItemId() == 2) loadOwner(retryUrl);
             else if (item.getItemId() == 4) prepareUploadText();
+            else if (item.getItemId() == 5) push.settings();
             else openExternal(new Intent(Intent.ACTION_VIEW, Uri.parse(NavigationPolicy.HOME)));
             return true;
         });
@@ -321,6 +325,7 @@ public final class MainActivity extends Activity {
     @Override public void onBackPressed() { handleBack(); }
 
     @Override protected void onPause() {
+        if (push != null) push.pause();
         CookieManager.getInstance().flush();
         web.onPause();
         super.onPause();
@@ -329,10 +334,24 @@ public final class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         if (web != null) web.onResume();
+        if (push != null) push.resume();
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        if(requestCode==OwnerPushController.PERMISSION && push!=null)
+            push.permissionResult(results.length>0 && results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED);
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        loadOwner(NavigationPolicy.HOME);
     }
 
     @Override protected void onDestroy() {
         destroyed = true;
+        if (push != null) push.destroy();
         if (web != null) {
             web.stopLoading();
             web.setWebChromeClient(null);
