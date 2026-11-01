@@ -16,7 +16,7 @@ export function captureVinFrame(video,makeCanvas=()=>document.createElement('can
 
 // One local decode at a time. Stop invalidates pending permission/play/decode work,
 // so a late camera grant or barcode result cannot reopen the camera or overwrite a VIN.
-export function createLiveVinScanner({video,getMedia=constraints=>navigator.mediaDevices.getUserMedia(constraints),readFrame=scanVinLiveFrame,capture=captureVinFrame,schedule=setTimeout,cancel=clearTimeout,onStatus=()=>{},onMatch=()=>{},onError=()=>{}}) {
+export function createLiveVinScanner({video,getMedia=constraints=>navigator.mediaDevices.getUserMedia(constraints),readFrame=scanVinLiveFrame,capture=captureVinFrame,schedule=setTimeout,cancel=clearTimeout,onStatus=()=>{},onMatch=()=>{},onError=()=>{},onFrame=()=>{}}) {
   let generation=0,stream=null,task=null,running=false,lastVin='',hits=0,frames=0;
   const release=value=>{for(const track of value?.getTracks()||[])track.stop();};
   function stop(){generation++;running=false;if(task!==null)cancel(task);task=null;release(stream);stream=null;video.pause();video.srcObject=null;lastVin='';hits=0;}
@@ -33,8 +33,12 @@ export function createLiveVinScanner({video,getMedia=constraints=>navigator.medi
         task=null;if(!running||run!==generation)return;
         try{
           if(video.readyState>=2&&video.videoWidth&&video.videoHeight){
-            const result=await readFrame(capture(video),{enhance:++frames%4===0});
+            // A fine barcode may only decode on an enhanced pass. Keep that pass
+            // for confirmation instead of returning to raw frames and resetting it.
+            const enhance=++frames%4===0||hits>0;
+            const result=await readFrame(capture(video),{enhance});
             if(!running||run!==generation)return;
+            onFrame(result,{frames,enhance});
             if(result.diagnostics?.status==='unavailable')throw Error('The barcode reader could not start. Choose a VIN photo or enter the VIN.');
             const vins=[...new Set((result.candidates||[]).map(c=>normalizeVin(c.vin)).filter(validVin))];
             if(vins.length===1){hits=vins[0]===lastVin?hits+1:1;lastVin=vins[0];onStatus('Barcode found. Hold steady to confirm…');if(hits>=2){const vin=lastVin;stop();onMatch(vin,result);return;}}

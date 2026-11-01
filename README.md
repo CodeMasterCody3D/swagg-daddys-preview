@@ -112,3 +112,7 @@ Live scan VIN opens a rear-camera video preview inside the customer page after t
 The live view has a Take photo button. It captures the current frame, stops the stream, and runs the existing barcode-first photo pipeline; when no barcode VIN is found, enabled Google Lens reads that single captured image. Live video is not uploaded. Saved-photo selection and an optional native phone-camera fallback remain available.
 
 Live-camera checks cover two-frame confirmation, no audio permission, late permission grants, stale decoder results after stopping, ambiguous/invalid barcodes, recoverable errors, bounded frame capture, and captured-photo handoff to Google. Physical Android/iPhone camera focus and permissions still require a real-device test; desktop cloud-browser results are not a substitute.
+
+### Live confirmation follow-up
+
+An enhanced-only VIN read could never confirm: enhancement ran every fourth frame, and the next raw-frame miss reset the required consecutive match. The controller now keeps enhanced scanning enabled for the next confirmation frame after finding a VIN. A regression test fails against the old cadence and passes with the fix. Live barcode details also show frame count, camera dimensions, passes and recognized symbols for diagnosis. All 63 tests and the static build pass. This confirms the control-flow repair; the user's laptop camera image still needs a fresh live test. Google remains available only through the photo pipeline after local barcode attempts.

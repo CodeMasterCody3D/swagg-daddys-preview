@@ -16,6 +16,13 @@ test('live camera requests rear video only, confirms two frames, then releases c
   const f=fixture();await f.controller.start();assert.equal(f.constraints.audio,false);assert.equal(f.constraints.video.facingMode.ideal,'environment');
   await f.tick();assert.equal(f.matches.length,0);await f.tick();assert.equal(f.matches[0].vin,vin);assert.equal(f.matches.length,1);assert.equal(f.stopped,1);assert.equal(f.video.srcObject,null);assert.equal(f.controller.active,false);assert.equal(f.queue.length,0);
 });
+test('a VIN that requires enhanced scanning can confirm on the next frame without Google',async()=>{
+  const passes=[];
+  const f=fixture({readFrame:async(_frame,{enhance})=>{passes.push(enhance);return enhance?candidate():{candidates:[],diagnostics:{status:'no-vin'}};}});
+  await f.controller.start();for(let i=0;i<5;i++)await f.tick();
+  assert.deepEqual(passes,[false,false,false,true,true]);
+  assert.equal(f.matches.length,1);assert.equal(f.matches[0].vin,vin);assert.equal(f.stopped,1);
+});
 test('closing during permission prevents a late grant reopening the camera',async()=>{
   const permission=deferred();const f=fixture({getMedia:()=>permission.promise});const started=f.controller.start();f.controller.stop();permission.resolve(f.stream);await started;
   assert.equal(f.video.srcObject,null);assert.equal(f.stopped,1);assert.equal(f.queue.length,0);assert.equal(f.matches.length,0);
