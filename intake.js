@@ -3,6 +3,18 @@
   const media = document.getElementById('media');
   const submit = form.querySelector('button[type="submit"]');
   const status = document.getElementById('submission-status');
+  function showStatus(message,error=false) {
+    status.classList.toggle('submission-error',error);
+    status.setAttribute('role',error?'alert':'status');status.setAttribute('aria-live',error?'assertive':'polite');
+    status.textContent=error?'Request not sent. '+message:message;
+    if(error){status.scrollIntoView({block:'center',behavior:'smooth'});status.focus({preventScroll:true});}
+  }
+  form.addEventListener('invalid',event=>{
+    event.preventDefault();
+    showStatus(event.target.id==='location-consent'?'Please check the service request disclosure above, then press Send service request again.':event.target.validationMessage || 'Please review the highlighted field and try again.',true);
+  },true);
+  form.addEventListener('input',()=>{if(status.classList.contains('submission-error'))showStatus('');});
+
   const isGithub = location.hostname.endsWith('github.io');
   let backend = '';
   try { const url = new URL(window.SWAGG_CONFIG?.backendOrigin); if (url.protocol === 'https:') backend = url.origin; } catch {}
@@ -22,18 +34,19 @@
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (!form.reportValidity()) return;
-    const files = [...media.files];
-    if (files.length > 3 || files.reduce((sum,file)=>sum+file.size,0) > 4*1024*1024) { status.textContent='Choose up to 3 files, under 4 MB combined.'; return; }
-    submit.disabled=true; status.textContent='Sending your request…';
+    submit.disabled=true; media.disabled=true; showStatus('Preparing your request…');
     try {
-      const response = await fetch(api + '/requests', { method:'POST', body:new FormData(form), credentials:'omit' });
+      const prepared=await (window.SWAGG_MEDIA_READY || Promise.resolve({files:[...media.files],warnings:[]}));
+      const body=new FormData(form);body.delete('issue_media');for(const file of prepared.files)body.append('issue_media',file,file.name);
+      showStatus('Sending your request…');
+      const response = await fetch(api + '/requests', { method:'POST', body, credentials:'omit' });
       const data = await response.json().catch(()=>({}));
       if (!response.ok || !data.received) throw new Error(data.error || 'Your request could not be sent. Please call or text 205-492-8772.');
       form.reset(); document.getElementById('media-box').hidden=false; document.getElementById('file-list').textContent='No files selected.';
       for (const id of ['latitude','longitude','accuracy']) document.getElementById(id).value='';
       document.getElementById('location-status').textContent=''; document.getElementById('request-result').hidden=true;
-      status.textContent='Request received. Swagg Daddys will contact you about availability and pricing. Your appointment is not confirmed yet.';
-    } catch(error) { status.textContent=error.message; }
-    finally { submit.disabled=false; }
+      showStatus('Request received. Swagg Daddys will review your details. Your appointment is not confirmed yet.'+(prepared.warnings.length?' '+prepared.warnings.join(' '):''));
+    } catch(error) { showStatus(error instanceof TypeError?'Please check your connection and try again, or call/text 205-492-8772.':error.message,true); }
+    finally { submit.disabled=false;media.disabled=false; }
   });
 })();

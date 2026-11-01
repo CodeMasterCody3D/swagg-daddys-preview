@@ -13,8 +13,8 @@ try { qa = JSON.parse(await readFile('.openai/qa.json','utf8')); } catch {}
 if (qa) { env.OWNER_USERNAME='owner'; env.OWNER_PASSWORD_HASH=await hashPassword(qa.password); }
 const store = localStore('.local-data/inbox.sqlite');
 const api = createApi({ store, env });
-const publicFiles = new Set(['/index.html','/site-config.js','/intake.js','/vin.js','/vin-core.js','/privacy.html','/owner/index.html','/owner/owner.css','/owner/owner.js']);
-const types = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.webp':'image/webp' };
+const publicFiles = new Set(['/index.html','/site-config.js','/intake.js','/media.js','/vin.js','/vin-core.js','/vin-scan.js','/privacy.html','/owner/index.html','/owner/owner.css','/owner/owner.js']);
+const types = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.webp':'image/webp', '.wasm':'application/wasm', '.gz':'application/gzip', '.txt':'text/plain' };
 const root = resolve('.');
 const server = createServer(async (req,res) => {
   try {
@@ -45,8 +45,9 @@ const server = createServer(async (req,res) => {
       res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width"><title>Phone QA</title></head><body style="margin:0;background:#24352d;color:white;font:14px Arial;display:flex;gap:20px;padding:20px"><div><p>320 px</p><iframe title="Small phone" src="/owner/" style="width:320px;height:820px;border:0"></iframe></div><div><p>390 px</p><iframe title="Phone" src="/owner/" style="width:390px;height:844px;border:0"></iframe></div><div><p>430 px</p><iframe title="Large phone" src="/owner/" style="width:430px;height:844px;border:0"></iframe></div></body></html>'); return;
     }
     const path = url.pathname.endsWith('/') ? url.pathname + 'index.html' : url.pathname;
-    if (!publicFiles.has(path) && !/^\/assets\/[a-z0-9-]+\.webp$/.test(path)) { res.writeHead(404); res.end('Not found'); return; }
-    const filename = resolve(root, '.' + path);
+    const vendor=/^\/vendor\/(?:tesseract|zxing)\/[a-zA-Z0-9./_-]+$/.test(path) && !path.includes('..');
+    if (!vendor && !publicFiles.has(path) && !/^\/assets\/[a-z0-9-]+\.webp$/.test(path)) { res.writeHead(404); res.end('Not found'); return; }
+    const filename = resolve(root, vendor ? 'public'+path : '.'+path);
     if (!filename.startsWith(root+sep)) { res.writeHead(403); res.end(); return; }
     const data = await readFile(filename);
     res.writeHead(200, { 'Content-Type':types[extname(path)] || 'application/octet-stream', 'Cache-Control':'no-store' }); res.end(data);

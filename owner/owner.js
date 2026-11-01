@@ -19,13 +19,13 @@ function contactLink(number, kind = 'tel') { return `${kind}:${number.replace(/[
 function shortDate(date) { return new Date(date).toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
 function render() {
   const query = $('search').value.trim().toLowerCase(); const filter = $('status-filter').value;
-  const visible = items.filter(item => (!filter || item.status === filter) && (!query || [item.name,item.phone,item.vehicle,item.vin,item.location].join(' ').toLowerCase().includes(query)));
+  const visible = items.filter(item => (!filter || item.status === filter) && (!query || [item.name,item.phone,item.vehicle,item.vin,item.vinSubmitted,item.location].join(' ').toLowerCase().includes(query)));
   $('cards').replaceChildren();
   for (const customer of visible) {
     const card = el('article', undefined, 'customer'); const top = el('div', undefined, 'customer-heading');
     const name = el('button', customer.name, 'customer-name'); name.type='button'; name.addEventListener('click', () => openCustomer(customer.id)); top.append(name);
     top.append(el('span', customer.status, 'badge')); card.append(top, el('p', customer.vehicle), el('p', customer.issue));
-    const phone = el('a', customer.phone, 'phone'); phone.href = contactLink(customer.dialNumber); phone.setAttribute('aria-label', `Call ${customer.name} at ${customer.phone}`); card.append(phone);
+    const phone = el(customer.dialNumber?'a':'p', customer.phone || 'Phone not provided', 'phone'); if(customer.dialNumber)phone.href = contactLink(customer.dialNumber); phone.setAttribute('aria-label', `Call ${customer.name} at ${customer.phone}`); card.append(phone);
     const urgent = customer.urgency.startsWith('Urgent'); card.append(el('span', customer.urgency.split(' — ')[0], 'badge' + (urgent ? ' urgent' : '')));
     const bottom = el('div', undefined, 'customer-bottom'); bottom.append(el('span', shortDate(customer.createdAt), 'small'));
     const view = el('button', 'View request', 'button secondary compact'); view.addEventListener('click', () => openCustomer(customer.id)); bottom.append(view); card.append(bottom); $('cards').append(card);
@@ -57,8 +57,11 @@ async function openCustomer(id) {
   try {
     const item = await api('/requests/' + id); active = item; clearMedia(); $('customer-facts').replaceChildren();
     $('customer-title').textContent = item.name; $('customer-vehicle').textContent = item.vehicle;
-    $('call-customer').href = contactLink(item.dialNumber); $('call-customer').textContent = 'Call ' + item.phone;
-    $('text-customer').href = contactLink(item.dialNumber, 'sms');
+    $('call-customer').hidden=!item.dialNumber;$('text-customer').hidden=!item.dialNumber;
+    $('call-customer').href = contactLink(item.dialNumber || ''); $('call-customer').textContent = 'Call ' + item.phone;
+    $('text-customer').href = contactLink(item.dialNumber || '', 'sms');
+    if(!item.dialNumber)fact('Contact information (as entered)',item.phone || 'No phone number provided');
+    if(item.vinSubmitted && !item.vin)fact('VIN (as entered; incomplete or unrecognized)',item.vinSubmitted);
     fact('Requested', shortDate(item.createdAt)); fact('Urgency', item.urgency); fact('Issue', item.issue); fact('Location', item.location);
     if (item.gps) { const map = el('a', 'Open vehicle location in Maps'); map.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(item.gps.latitude + ',' + item.gps.longitude); map.target='_blank'; map.rel='noopener noreferrer'; fact('Shared GPS', map); }
     if (item.vin) {

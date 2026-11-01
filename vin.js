@@ -1,17 +1,9 @@
-import { normalizeVin, validVin, vinCandidates, decodedVehicle } from './vin-core.js';
+import { photoCanvas, scanVinPhoto } from './vin-scan.js';
+import { normalizeVin, validVin, decodedVehicle } from './vin-core.js';
 
 const $ = id => document.getElementById(id);
 const input = $('vin'), status = $('vin-status'), lookup = $('vin-lookup');
-let timer, revision = 0, abort, recognized = '', scanBusy = false;
-const libraries = new Map();
-function loadScript(url) {
-  if (!libraries.has(url)) libraries.set(url, new Promise((resolve,reject) => {
-    const script = document.createElement('script'); script.src=url; script.crossOrigin='anonymous';
-    script.onload=resolve; script.onerror=() => { libraries.delete(url); script.remove(); reject(new Error('Scanner could not load. Check your connection or type the VIN.')); };
-    document.head.append(script);
-  }));
-  return libraries.get(url);
-}
+let timer, revision = 0, abort, scanBusy = false;
 function clearDecode() {
   revision++; abort?.abort(); lookup.disabled=false; $('vin-specs').value=''; $('vin-details').textContent='';
   // Clear only the auto-filled value; preserve customer-entered corrections.
@@ -49,34 +41,69 @@ async function decode() {
   } finally { clearTimeout(timeout); if (current===revision) lookup.disabled=false; }
 }
 lookup.addEventListener('click',decode);
-// Native camera picker works without a persistent camera stream or microphone access.
-$('vin-photo-button').addEventListener('click',()=> $('vin-photo').click());
-$('vin-photo').addEventListener('change', async event => {
-  const file=event.target.files[0]; if (!file || scanBusy) return;
-  $('vin-candidate').hidden=true; recognized='';
-  if (file.size>20*1024*1024 || !file.type.startsWith('image/')) { status.textContent='Choose a clear photo under 20 MB, or type the VIN.'; event.target.value=''; return; }
-  scanBusy=true; $('vin-photo-button').disabled=true;
-  const url=URL.createObjectURL(file); let worker;
+// Both native camera capture and selecting an existing image use the same local scanner.
+let sourcePhoto=null, crop=null, cropStart=null, scanId=0;
+const preview=$('vin-photo-preview');
+function drawPhoto() {
+  if(!sourcePhoto)return;
+  const scale=Math.min(1,680/sourcePhoto.width,380/sourcePhoto.height);
+  preview.width=Math.round(sourcePhoto.width*scale);preview.height=Math.round(sourcePhoto.height*scale);
+  const ctx=preview.getContext('2d');ctx.drawImage(sourcePhoto,0,0,preview.width,preview.height);
+  if(crop) {ctx.strokeStyle='#47edbd';ctx.lineWidth=3;ctx.strokeRect(crop.x*scale,crop.y*scale,crop.width*scale,crop.height*scale);}
+}
+function point(event) {
+  const rect=preview.getBoundingClientRect();
+  return {x:Math.max(0,Math.min(sourcePhoto.width,(event.clientX-rect.left)/rect.width*sourcePhoto.width)),y:Math.max(0,Math.min(sourcePhoto.height,(event.clientY-rect.top)/rect.height*sourcePhoto.height))};
+}
+preview.addEventListener('pointerdown',event=>{if(!sourcePhoto||scanBusy)return;preview.setPointerCapture(event.pointerId);cropStart=point(event);crop=null;});
+preview.addEventListener('pointermove',event=>{if(!cropStart)return;const end=point(event);crop={x:Math.min(cropStart.x,end.x),y:Math.min(cropStart.y,end.y),width:Math.abs(cropStart.x-end.x),height:Math.abs(cropStart.y-end.y)};drawPhoto();});
+function finishCrop(){if(!cropStart)return;cropStart=null;if(!crop||crop.width<25||crop.height<10)crop=null;drawPhoto();$('vin-crop-status').textContent=crop?'VIN area selected. Tap Retry selected area.':'Full photo selected.';}
+preview.addEventListener('pointerup',finishCrop);preview.addEventListener('pointercancel',finishCrop);
+function reviewCandidate(candidate) {
+  $('vin-recognized').value=candidate?.vin || '';
+  $('vin-review-note').textContent=candidate?.corrected?'Possible character mix-up: O/Q was changed to 0 or I to 1 in this suggestion. Check every character against your photo.':'Compare every character with the photo. Correct the text before choosing Use this VIN.';
+}
+let suggestions=[];
+$('vin-suggestions').addEventListener('change',()=>reviewCandidate(suggestions[Number($('vin-suggestions').value)]));
+async function readPhoto() {
+  if(!sourcePhoto||scanBusy)return;
+  const current=++scanId;scanBusy=true;$('vin-candidate').hidden=true;
+  for(const id of ['vin-photo-button','vin-upload-button','vin-retry','vin-clear-photo'])$(id).disabled=true;
   try {
-    status.textContent='Reading the barcode in your photo…';
-    let candidates=[];
-    try {
-      await loadScript('https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js');
-      const result=await new window.ZXingBrowser.BrowserMultiFormatReader().decodeFromImageUrl(url);
-      candidates=vinCandidates(result.getText());
-    } catch { /* A photo of printed VIN text may not contain a readable barcode. */ }
-    if (!candidates.length) {
-      status.textContent='Reading the printed VIN. The first scan may take a moment…';
-      await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js');
-      worker=await window.Tesseract.createWorker('eng');
-      await worker.setParameters({tessedit_char_whitelist:'ABCDEFGHJKLMNPRSTUVWXYZ0123456789 :*-\n'});
-      const result=await worker.recognize(file); candidates=vinCandidates(result.data.text);
-    }
-    if (candidates.length!==1) throw new Error(candidates.length?'More than one VIN was found. Take a closer photo of one VIN, or type it.':'No clear VIN found. Take a closer, well-lit photo of the VIN text or barcode, or type it.');
-    recognized=candidates[0]; $('vin-recognized').textContent=recognized; $('vin-candidate').hidden=false;
-    status.textContent='Compare the recognized VIN with the vehicle label, then choose Use this VIN.';
-  } catch(error) { status.textContent=error.message || 'The photo could not be read. Please type the VIN.'; }
-  finally { try { await worker?.terminate(); } catch {} URL.revokeObjectURL(url); event.target.value=''; scanBusy=false; $('vin-photo-button').disabled=false; }
+    const result=await scanVinPhoto(sourcePhoto,{rectangle:crop,progress:text=>{if(current===scanId)status.textContent=text;}});
+    if(current!==scanId)return;
+    suggestions=result.candidates;$('vin-suggestions').replaceChildren(...suggestions.map((candidate,i)=>new Option(candidate.vin+(candidate.corrected?' — check characters':''),String(i))));
+    $('vin-suggestions').hidden=suggestions.length<2;
+    $('vin-raw-text').textContent=result.rawText || 'No readable text was returned.';
+    $('vin-read-details').open=!suggestions.length;
+    $('vin-candidate').hidden=false;reviewCandidate(suggestions[0]);
+    status.textContent=suggestions.length?'VIN reading ready. Review the characters below before using it.':result.rawText?'Text was read, but a complete VIN was not identified. Select the VIN area to retry, or enter/correct the scanned VIN below.':'No text was detected. Select the VIN area in the photo to retry, or type the VIN below.';
+    if(result.warnings.length)status.textContent+=' '+result.warnings.join(' ');
+  } catch(error) {if(current===scanId)status.textContent=error.message || 'The scanner could not finish. Try selecting the VIN area or enter it manually.';}
+  finally {scanBusy=false;for(const id of ['vin-photo-button','vin-upload-button','vin-retry','vin-clear-photo'])$(id).disabled=false;}
+}
+async function selectPhoto(event) {
+  const file=event.target.files[0];if(!file||scanBusy)return;
+  event.target.value='';
+  if(file.size>25*1024*1024||!file.type.startsWith('image/')){status.textContent='Choose a photo under 25 MB, or enter the VIN manually.';return;}
+  const current=++scanId;scanBusy=true;
+  for(const id of ['vin-photo-button','vin-upload-button','vin-retry','vin-clear-photo'])$(id).disabled=true;
+  try {
+    const nextPhoto=await photoCanvas(file);if(current!==scanId)return;
+    sourcePhoto=nextPhoto;crop=null;drawPhoto();$('vin-photo-tools').hidden=false;$('vin-crop-status').textContent='Full photo selected. Drag around the VIN if a retry is needed.';scanBusy=false;await readPhoto();
+  } catch(error){status.textContent=error.message;}
+  finally {scanBusy=false;for(const id of ['vin-photo-button','vin-upload-button','vin-retry','vin-clear-photo'])$(id).disabled=false;}
+}
+$('vin-photo-button').addEventListener('click',()=>$('vin-photo').click());
+$('vin-upload-button').addEventListener('click',()=>$('vin-upload').click());
+$('vin-photo').addEventListener('change',selectPhoto);$('vin-upload').addEventListener('change',selectPhoto);
+$('vin-retry').addEventListener('click',readPhoto);
+function clearPhoto(){scanId++;sourcePhoto=null;crop=null;cropStart=null;preview.width=1;preview.height=1;$('vin-photo-tools').hidden=true;$('vin-candidate').hidden=true;$('vin-raw-text').textContent='';$('vin-recognized').value='';suggestions=[];}
+$('vin-clear-photo').addEventListener('click',()=>{clearPhoto();status.textContent='Photo cleared. You can take another photo or type your VIN.';});
+$('vin-use').addEventListener('click',()=> {
+  const vin=normalizeVin($('vin-recognized').value);
+  clearDecode();input.value=vin;clearPhoto();
+  if(validVin(vin))void decode();
+  else status.textContent='VIN kept as entered. You can enter vehicle details manually or send the request as it is.';
 });
-$('vin-use').addEventListener('click',()=> { clearDecode(); input.value=recognized; $('vin-candidate').hidden=true; void decode(); });
-$('service-form').addEventListener('reset',()=> { clearTimeout(timer); clearDecode(); input.setCustomValidity(''); status.textContent=''; $('vin-candidate').hidden=true; lookup.disabled=false; });
+$('service-form').addEventListener('reset',()=>{clearTimeout(timer);clearDecode();clearPhoto();input.setCustomValidity('');status.textContent='';lookup.disabled=false;});

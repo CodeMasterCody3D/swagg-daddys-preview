@@ -22,3 +22,15 @@ test('only complete unflagged decoder results qualify for automatic fill',()=>{
   assert.equal(decodedVehicle({...row,Make:''}).complete,false);
   assert.equal(decodedVehicle(undefined).complete,false);
 });
+
+test('scanned VIN text supports label punctuation and split OCR words, with explicit correction flags',async()=>{
+  const {scannedVins}=await import('../vin-core.js');const vin='1HGCM82633A004352';
+  assert.deepEqual(scannedVins('VIN #: 1HG CM82633 A004352  MODEL ACCORD'),[{vin,corrected:false}]);
+  assert.deepEqual(scannedVins('VIN: 1HGCM82633AOO4352'),[{vin,corrected:true}]);
+  assert.deepEqual(scannedVins('VIN: 1HGCM82633AOO4352',{barcode:true}),[]);
+  assert.deepEqual(scannedVins('I'+vin,{barcode:true}),[{vin,corrected:false}]);
+  assert.deepEqual(scannedVins('17V'+vin,{barcode:true}),[{vin,corrected:false}]);
+  assert.deepEqual(scannedVins('VIN: 12345678'),[]);
+  assert.deepEqual(scannedVins('IDENTIFICATIONXYZ'),[]);
+  assert.deepEqual(scannedVins('VIN: '+vin+'\nVIN: '+vin),[{vin,corrected:false}]);
+});

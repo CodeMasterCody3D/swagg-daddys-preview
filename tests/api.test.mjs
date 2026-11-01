@@ -70,10 +70,9 @@ test('sessions expire and password rotation invalidates existing sessions', asyn
     assert.equal((await rotated(request('/session',fresh))).status,401);
   } finally { store.close(); }
 });
-test('invalid requests, missing consent, spoofed files, and excessive uploads are rejected without saved records', async () => {
+test('missing disclosure, spoofed files, and excessive uploads are rejected without saved records', async () => {
   const cases=[
-    [fixture({phone:'javascript:alert(1)'}),null,400], [fixture({location_consent:''}),null,400],
-    [fixture({latitude:'100',longitude:'10',location_accuracy:'5'}),null,400], [fixture({urgency:'invented'}),null,400],
+    [fixture({location_consent:''}),null,400],
     [fixture(),new Blob(['<script>bad</script>'],{type:'image/jpeg'}),415],
     [fixture(),new Blob([new Uint8Array(MAX_MEDIA_BYTES+1)],{type:'video/mp4'}),413]
   ];
@@ -137,10 +136,10 @@ test('all urgency levels accept photos and VIN persists in owner-only vehicle hi
     await api(request('/logout',{...auth,method:'POST',body:{}})); assert.equal((await api(request(path,auth))).status,401);
   } finally {store.close();}
 });
-test('malformed optional VIN and specifications are rejected, while blank VIN keeps manual entry usable', async()=>{
+test('uncertain optional VIN and specifications are accepted without claiming a successful decode', async()=>{
   for (const fields of [{vin:'1HGCM82633AOO4352'},{vin:'123'},{vin:'1HGCM82633A004352',vin_specs:'[]'},{vin:'1HGCM82633A004352',vin_specs:'bad JSON'},{vin:'1HGCM82633A004352',vin_specs:'{"make":42}'}]) {
     const store=localStore(); const api=createApi({store,env});
-    try {assert.equal((await api(request('/requests',{method:'POST',body:form(fixture(fields))}),{ip:'invalid-vin'})).status,400);assert.deepEqual(await store.keys('requests/'),[]);} finally {store.close();}
+    try {const response=await api(request('/requests',{method:'POST',body:form(fixture(fields))}),{ip:'invalid-vin'});assert.equal(response.status,201);const records=await store.keys('requests/');assert.equal(records.length,1);const record=(await store.get(records[0])).value;assert.equal(record.vinSubmitted,fields.vin);if(fields.vin.length!==17 || fields.vin.includes('O'))assert.equal(record.vin,'');} finally {store.close();}
   }
   const store=localStore();const api=createApi({store,env});
   try {assert.equal((await api(request('/requests',{method:'POST',body:form(fixture({vin:''}))}),{ip:'manual'})).status,201);} finally {store.close();}
@@ -196,5 +195,14 @@ test('active and Trash pagination skip excluded records without hiding older mat
       const last=await (await api(request('/requests?view='+view+'&before='+first.next,auth))).json();assert.equal(last.items.length,2);assert.equal(last.next,null);
       assert.ok([...first.items,...last.items].every(i=>Boolean(i.deletedAt)===(view==='trash')));
     }
+  } finally {store.close();}
+});
+
+test('partial or mistaken customer information is saved for owner follow-up instead of blocking submission',async()=>{
+  const store=localStore();const api=createApi({store,env});
+  try {
+    const response=await api(request('/requests',{method:'POST',body:form(fixture({name:'',phone:'please contact my spouse',vehicle:'',location:'',urgency:'',issue:'',vin:'not sure 123',latitude:'100',longitude:'10',location_accuracy:'5'}))}),{ip:'best-effort'});
+    assert.equal(response.status,201);const saved=await response.json();const auth=await login(api);const record=await (await api(request('/requests/'+saved.reference,auth))).json();
+    assert.equal(record.name,'Name not provided');assert.equal(record.phone,'please contact my spouse');assert.equal(record.dialNumber,'');assert.equal(record.vin,'');assert.equal(record.vinSubmitted,'not sure 123');assert.equal(record.gps,undefined);assert.equal(record.vehicle,'Vehicle details not provided');
   } finally {store.close();}
 });

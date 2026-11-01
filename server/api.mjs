@@ -5,7 +5,6 @@ import { configured, cookieValue, digest, sessionCookie, SESSION_MS, token, veri
 export const MAX_MEDIA_BYTES = 4 * 1024 * 1024;
 const MAX_BODY_BYTES = MAX_MEDIA_BYTES + 65536;
 const STATUSES = ['New', 'Contacted', 'Scheduled', 'In progress', 'Completed', 'Cancelled'];
-const URGENCIES = ['Urgent — vehicle is stranded', 'Soon — needs attention', 'Flexible — I can wait'];
 const idPattern = /^\d{13}-[0-9a-f-]{36}$/;
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -15,6 +14,7 @@ const text = (value, max, required = true) => {
   if (typeof value !== 'string' || (required && !value.trim()) || value.length > max) fail(400, 'Please check the form fields.');
   return value.trim();
 };
+const customerText = (value,max) => typeof value === 'string' ? value.trim().slice(0,max) : '';
 const safeName = value => value.replace(/[^a-zA-Z0-9._ -]/g, '_').slice(0, 100) || 'attachment';
 const publicRecord = r => r; // Returned only after session authorization; never on public submission.
 
@@ -129,30 +129,30 @@ export function createApi({ store, env = process.env, now = Date.now }) {
         if (form.get('website')) return json({ received: true }, 202); // Honeypot; no customer data is stored.
         const record = {
           id: `${now()}-${randomUUID()}`, createdAt: new Date(now()).toISOString(), updatedAt: new Date(now()).toISOString(),
-          name: text(form.get('name'), 100), phone: text(form.get('phone'), 40), vehicle: text(form.get('vehicle'), 160),
-          location: text(form.get('location'), 120), urgency: text(form.get('urgency'), 80), issue: text(form.get('issue'), 160),
-          details: text(form.get('details') || '', 2000, false), status: 'New', notes: '', media: []
+          name: customerText(form.get('name'),100) || 'Name not provided', phone: customerText(form.get('phone'),80), vehicle: customerText(form.get('vehicle'),160) || 'Vehicle details not provided',
+          location: customerText(form.get('location'),120) || 'Location not provided', urgency: customerText(form.get('urgency'),80) || 'Not specified', issue: customerText(form.get('issue'),160) || 'Service request',
+          details: customerText(form.get('details'),2000), status: 'New', notes: '', media: []
         };
-        record.vin = normalizeVin(text(form.get('vin') || '', 40, false));
-        if (record.vin && !validVin(record.vin)) fail(400, 'Enter a valid 17-character VIN, or leave it blank.');
+        record.vinSubmitted = customerText(form.get('vin'),80);
+        const candidateVin = normalizeVin(record.vinSubmitted);
+        record.vin = validVin(candidateVin) ? candidateVin : '';
         record.vehicleSpecs = {};
         if (record.vin && form.get('vin_specs')) {
-          let specs;
-          try { specs = JSON.parse(text(form.get('vin_specs'), 2048, false)); } catch { fail(400, 'Please check the vehicle specifications.'); }
-          if (!specs || typeof specs !== 'object' || Array.isArray(specs)) fail(400, 'Please check the vehicle specifications.');
-          for (const key of Object.keys(specFields)) if (specs[key] !== undefined) record.vehicleSpecs[key] = text(specs[key],120,false);
+          try {
+            const specs = JSON.parse(customerText(form.get('vin_specs'),2048));
+            if (specs && typeof specs === 'object' && !Array.isArray(specs)) for (const key of Object.keys(specFields)) {
+              const value=customerText(specs[key],120);if(value)record.vehicleSpecs[key]=value;
+            }
+          } catch { /* Uncertain vehicle details never block a service request. */ }
         }
-        const digits = record.phone.replace(/\D/g, '');
-        if (digits.length < 7 || digits.length > 15 || !/^[+\d\s().-]+$/.test(record.phone)) fail(400, 'Enter a valid phone number.');
-        record.dialNumber = (record.phone.trim().startsWith('+') ? '+' : '') + digits;
-        if (!URGENCIES.includes(record.urgency)) fail(400, 'Choose an urgency level.');
+        const digits=record.phone.replace(/\D/g,'');
+        record.dialNumber = digits.length>=7 && digits.length<=15 && /^[+\d\s().-]+$/.test(record.phone) ? (record.phone.startsWith('+')?'+':'')+digits : '';
         if (form.get('location_consent') !== 'yes') fail(400, 'Please accept the service request disclosure.');
         record.consentAt = record.createdAt;
         const lat = form.get('latitude'); const lng = form.get('longitude');
         if (lat || lng) {
           const latitude = Number(lat), longitude = Number(lng), accuracy = Number(form.get('location_accuracy'));
-          if (!lat || !lng || !Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180 || !Number.isFinite(accuracy) || accuracy < 0) fail(400, 'The shared location is invalid.');
-          record.gps = { latitude, longitude, accuracy };
+          if (lat && lng && Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude)<=90 && Math.abs(longitude)<=180 && Number.isFinite(accuracy) && accuracy>=0) record.gps={latitude,longitude,accuracy};
         }
         const files = form.getAll('issue_media').filter(f => typeof f !== 'string' && f.size > 0);
         if (files.length > 3 || files.reduce((sum,f) => sum + f.size, 0) > MAX_MEDIA_BYTES) fail(413, 'Choose up to 3 files, under 4 MB combined.');

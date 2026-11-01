@@ -10,7 +10,7 @@ The customer site keeps its logo, card artwork, large Call Now button, Text Me l
 - Customer list, search, status filter, private notes, and job status: New, Contacted, Scheduled, In progress, Completed, Cancelled.
 - Tap a customer's number or Call button to open a `tel:` link. Android chooses a compatible dialer; Google Voice availability depends on the device. The future wrapper must handle telephone and SMS links with Android intents, using `ACTION_DIAL` for calls rather than placing calls automatically.
 - GPS links open the shared vehicle location in Maps. Customers may decline GPS and enter an area instead.
-- Up to 3 supported files, including at most 1 short video, under **4 MiB combined**. This stays below Netlify's effective binary function request limit. Supported types: JPG, PNG, GIF, WebP, MP4, MOV, WebM. The server checks file signatures and type.
+- Up to 3 supported files, including at most 1 short video, under **4 MiB combined after automatic photo preparation**. Original photos may be up to 25 MiB each. This stays below Netlify's effective binary function request limit. Supported types: JPG, PNG, GIF, WebP, MP4, MOV, WebM. The server checks file signatures and type.
 - Records and attachments require an authenticated owner session. Knowing the owner URL or spoofing a WebView user agent does not grant access.
 
 ## Hosting and activation
@@ -38,16 +38,30 @@ npm run build
 
 `npm run dev` uses a separate local SQLite adapter; deployed Netlify functions never use local disk for persistence. Fixture configuration is ignored at `.openai/qa.json`. QA routes exist only in the local development server, never in the deployed functions. The build copies an explicit list of browser assets; server code, tests, local data, and QA configuration are excluded from the static publish directory.
 
-Eight tests cover persistence, protected records/media, failed login, CSRF and cross-origin rejection, expiry, password rotation, logout, stale-edit conflicts, consent/GPS/phone validation, spoofed/oversize media, rate limits, cleanup after storage failure, and production/preview storage isolation. Browser checks cover the 320/390/430 px owner layout and detail/edit flow using isolated fictional customers, including a submitted request appearing in the inbox. Deployed Netlify storage and real Android dialer behavior still require live/device verification.
+Automated tests cover persistence, protected records/media, failed login, CSRF and cross-origin rejection, expiry, password rotation, logout, stale-edit conflicts, best-effort customer fields, consent, spoofed/oversize media, rate limits, cleanup after storage failure, VIN history, trash/restore, and production/preview storage isolation. Browser checks cover the 320/390/430 px owner layout and detail/edit flow using isolated fictional customers, including a submitted request appearing in the inbox. Deployed Netlify storage and real Android dialer behavior still require live/device verification.
 
 The APK comes after deployed backend verification. It should load `/owner/` over HTTPS, retain authentication cookies, restrict in-WebView navigation to the approved site, and open telephone, SMS, and Maps links through external Android intents.
 
 ## VIN and uploads preview
 
-`preview/vin-uploads` adds optional VIN lookup through the free, keyless NHTSA vPIC API, manufacturer-reported specifications, and VIN-label photo/barcode reading. ZXing 0.1.5 and Tesseract.js 6.0.1 load on demand from jsDelivr; images are processed locally and not attached to the request. Review recognized VINs before lookup. Clear photos and a network connection are needed; manual vehicle entry stays available. The decoder is for standardized 17-character VINs and cannot provide ownership or external service history.
+`preview/vin-uploads` adds optional VIN lookup through the free, keyless NHTSA vPIC API, manufacturer-reported specifications, and VIN-label photo/barcode reading. ZXing-WASM 3.1.6 and Tesseract.js 6.0.1 load on demand from this website; images are processed locally and not attached to the request. Review recognized VINs before lookup. Clear photos and a network connection are needed; manual vehicle entry stays available. The decoder is for standardized 17-character VINs and cannot provide ownership or external service history.
 
 All urgency levels accept the existing limit of 3 files / 4 MiB combined / at most 1 video. Optional VIN/specifications persist with requests and appear in the private owner dashboard. VIN history is owner-authenticated, paginated, and contains this business’s requests and notes, with completed jobs distinguished. Older records without a VIN are left intact and are not guessed or matched by customer name.
 
 Do not merge to production until approved. A preview must set `window.SWAGG_PREVIEW = true` before intake.js, so test submissions remain local copy-only and do not contact the production backend.
 
 Owner requests can be moved to Trash and restored. Delete requires confirmation in the dashboard and a current revision; authentication, same-origin checks, and CSRF protection apply. Trashed records disappear from active lists and VIN history. Notes, status, completion dates, and attachments remain recoverable. This is soft deletion, not permanent data erasure.
+
+## Self-hosted VIN photo recognition
+
+Upstream projects: https://github.com/naptha/tesseract.js (OCR), https://github.com/Sec-ant/zxing-wasm (ZXing-C++ barcode engine), and https://github.com/naptha/tessdata (English recognition data). Exact npm versions and integrity hashes are pinned in package-lock.json. `npm run build` copies scripts, WebAssembly engines, language data, and bundled notices into public/vendor; no CDN is needed by the photo reader. These are served by Netlify; recognition itself runs on the customer's device. The dependencies also support Node.js, but this integration does not send photos to a paid or remote OCR service.
+
+Barcode decoding supports Code 39, Code 128, Code 93, PDF417, Data Matrix, and QR. A door label can have several barcodes; only one containing a complete VIN is useful for VIN entry. Printed text uses multiple segmentation/preparation passes; customers can crop and retry, inspect recognized text, choose between candidates, and edit before confirming. Possible O/Q-to-0 and I-to-1 suggestions are explicitly marked and never silently submitted. No guaranteed success on every photo; the customer's failed source image is still needed to reproduce that specific failure.
+
+## Forgiving intake and large photos
+
+Customer vehicle/contact fields are best-effort: unknown or partial VINs and failed decoder results do not block a request. The original VIN and contact text remain visible to the owner; only well-formed 17-character VINs link to vehicle history, and only dialable numbers become Call/Text links. The service-request disclosure is still required. Bad GPS values or malformed decoder metadata are ignored rather than rejecting the request.
+
+Original photos may be up to 25 MiB each. media.js opens browser-readable formats (including AVIF, BMP, ICO, SVG, and HEIC where supported by the visitor's browser), converts alternate formats to JPEG, and resizes/compresses large images automatically before sending. Up to 3 selected files are prepared within the existing 4 MiB server payload budget. A file that cannot be prepared is explicitly marked as not attached; the request can still be sent. Video compression is not implemented; the existing limit of at most one short video remains. Files that bypass browser preparation still undergo server signature checks and size enforcement.
+
+Blocking form or send errors use a large red alert directly beneath the submit button, explain the next action, and preserve entered fields. Informational VIN lookup failures do not prevent sending the service request.
