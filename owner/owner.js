@@ -1,3 +1,4 @@
+import { mountVehicleResearch } from './vehicle-research.js';
 const $ = id => document.getElementById(id);
 let csrf = '', items = [], next = null, active = null, statuses = [], objectUrls = [];
 const github = location.hostname.endsWith('github.io');
@@ -7,7 +8,7 @@ const apiBase = github ? (configuredOrigin ? configuredOrigin + '/api' : null) :
 function notice(message = '', error = false) { $('notice').textContent = message; $('notice').classList.toggle('error', error); }
 function show(id) { ['signin','inbox','unavailable'].forEach(name => $(name).hidden = name !== id); }
 function clearMedia() { objectUrls.forEach(url => URL.revokeObjectURL(url)); objectUrls = []; $('attachments').replaceChildren(); }
-function signedOut() { csrf = ''; items = []; active = null; next = null; clearMedia(); $('cards').replaceChildren(); $('customer-dialog').close(); $('password').value = ''; show('signin'); }
+function signedOut() { csrf = ''; items = []; active = null; next = null; clearMedia(); researchTools.reset(); ownerSection(false); $('cards').replaceChildren(); $('customer-dialog').close(); $('password').value = ''; show('signin'); }
 async function api(path, options = {}) {
   const response = await fetch(apiBase + path, { ...options, credentials: 'same-origin', cache: 'no-store', headers: { ...(options.body ? { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf } : {}), ...options.headers } });
   const data = await response.json().catch(() => ({}));
@@ -15,6 +16,9 @@ async function api(path, options = {}) {
   return data;
 }
 function el(tag, value, className) { const node = document.createElement(tag); if (value !== undefined) node.textContent = value; if (className) node.className = className; return node; }
+const researchTools=mountVehicleResearch($('vehicle-research'),{api});
+function ownerSection(tools=false){$('owner-tools').hidden=!tools;$('requests-view').hidden=tools;for(const [id,selected]of [['tools-tab',tools],['requests-tab',!tools]]){$(id).setAttribute('aria-pressed',String(selected));$(id).classList.toggle('secondary',!selected);}}
+$('tools-tab').addEventListener('click',()=>ownerSection(true));$('requests-tab').addEventListener('click',()=>ownerSection(false));
 function contactLink(number, kind = 'tel') { return `${kind}:${number.replace(/[^+0-9]/g, '')}`; }
 function shortDate(date) { return new Date(date).toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
 function requestVin(item) {
@@ -79,7 +83,7 @@ function fact(label, value) { const row = el('div', undefined, 'fact'); row.appe
 async function openCustomer(id) {
   notice('Loading customer…');
   try {
-    const item = await api('/requests/' + id); active = item; clearMedia(); $('customer-facts').replaceChildren();
+    const item = await api('/requests/' + id); active = item; clearMedia(); $('customer-facts').replaceChildren();let vehicleReport;
     $('customer-title').textContent = item.name; $('customer-vehicle').textContent = item.vehicle;
     $('call-customer').hidden=!item.dialNumber;$('text-customer').hidden=!item.dialNumber;
     $('call-customer').href = contactLink(item.dialNumber || ''); $('call-customer').textContent = 'Call ' + item.phone;
@@ -87,12 +91,15 @@ async function openCustomer(id) {
     $('customer-facts').append(requestVin(item));
     fact('Contact information (as entered)',item.phone || 'No phone number provided');
     fact('Requested', shortDate(item.createdAt)); fact('Urgency', item.urgency); fact('Issue', item.issue); fact('Location', item.location);
+    fact('Customer details', item.details || 'No additional details.');
     if (item.gps) { fact('Shared GPS coordinates',[item.gps.latitude,item.gps.longitude].join(', ')+' · Accuracy: '+item.gps.accuracy+' meters');const map = el('a', 'Open vehicle location in Maps'); map.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(item.gps.latitude + ',' + item.gps.longitude); map.target='_blank'; map.rel='noopener noreferrer'; fact('Vehicle location', map); }
     if (item.vin) {
+      const research=el('details',undefined,'job-tools');research.open=true;research.append(el('summary','Vehicle background report'));
+      const researchBody=el('div');research.append(researchBody);vehicleReport=mountVehicleResearch(researchBody,{api,vin:item.vin});fact('Vehicle research',research);
       if (item.vehicleSpecs) fact('Vehicle specifications (customer supplied)', Object.entries(item.vehicleSpecs).map(([key,value]) => key+': '+value).join(' · ') || 'Not supplied');
       const history = el('div'); const button=el('button','View history for this VIN','button secondary compact'); button.type='button'; history.append(button); fact('Vehicle history',history);
       let cursor=null, started=false;
-      button.addEventListener('click', async () => {
+      const loadHistory=async () => {
         button.disabled=true;
         try {
           const result=await api('/vehicles/'+encodeURIComponent(item.vin)+'/history'+(cursor?'?before='+encodeURIComponent(cursor):''));
@@ -108,15 +115,15 @@ async function openCustomer(id) {
           cursor=result.next; button.hidden=!cursor; button.textContent='Load older history';
         } catch(error) { $('detail-notice').textContent=error.message; }
         finally { button.disabled=false; }
-      });
+      };
+      button.addEventListener('click',loadHistory);void loadHistory();
     }
-    fact('Customer details', item.details || 'No additional details.');
     fact('Tools and repair references',jobTools(item));
     if(item.consentAt)fact('Service request disclosure accepted',shortDate(item.consentAt));
     $('update-form').hidden=Boolean(item.deletedAt); $('delete-request').hidden=Boolean(item.deletedAt); $('restore-request').hidden=!item.deletedAt; $('delete-confirmation').hidden=true;
     if (item.deletedAt) fact('Moved to Trash',shortDate(item.deletedAt));
     $('job-status').value = item.status; $('owner-notes').value = item.notes || ''; $('detail-notice').textContent = ''; $('detail-notice').classList.remove('error');
-    $('customer-dialog').showModal(); notice('');
+    $('customer-dialog').showModal(); notice('');vehicleReport?.run();
     for (const file of item.media) {
       const box = el('div', undefined, 'attachment'); const button = el('button', 'Load ' + file.name, 'button secondary compact'); box.append(button); $('attachments').append(box);
       const loadAttachment = async () => {
