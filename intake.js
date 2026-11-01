@@ -16,7 +16,7 @@
   } catch { return; } // Keep prepare/copy mode until the backend is actually available.
   window.SWAGG_INTAKE_ACTIVE = true;
   submit.textContent = 'Send service request';
-  document.querySelector('.privacy:not(#submission-status)').textContent = 'Your request, shared GPS coordinates, and selected files are sent privately to Swagg Daddys. Sending a request does not book an appointment.';
+  document.getElementById('intake-disclosure').textContent = 'Your request, shared GPS coordinates, and selected files are sent privately to Swagg Daddys. Sending a request does not book an appointment.';
   const booking = [...document.querySelectorAll('.faq details')].find(item => item.querySelector('summary')?.textContent === 'Does this request book an appointment?');
   if (booking) booking.querySelector('p').textContent = 'No. Your request is sent to the mechanic for review. An appointment is booked only after you confirm the date, location, work, and price together.';
   form.addEventListener('submit', async event => {
