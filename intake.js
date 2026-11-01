@@ -6,7 +6,7 @@
   const isGithub = location.hostname.endsWith('github.io');
   let backend = '';
   try { const url = new URL(window.SWAGG_CONFIG?.backendOrigin); if (url.protocol === 'https:') backend = url.origin; } catch {}
-  const enabled = !isGithub || Boolean(backend);
+  const enabled = !window.SWAGG_PREVIEW && (!isGithub || Boolean(backend));
   const api = isGithub && backend ? backend + '/api' : '/api';
   if (!enabled) return; // Existing copy-message preview stays usable until the backend origin is set.
   try {
@@ -29,7 +29,7 @@
       const response = await fetch(api + '/requests', { method:'POST', body:new FormData(form), credentials:'omit' });
       const data = await response.json().catch(()=>({}));
       if (!response.ok || !data.received) throw new Error(data.error || 'Your request could not be sent. Please call or text 205-492-8772.');
-      form.reset(); document.getElementById('media-box').hidden=true; document.getElementById('file-list').textContent='No files selected.';
+      form.reset(); document.getElementById('media-box').hidden=false; document.getElementById('file-list').textContent='No files selected.';
       for (const id of ['latitude','longitude','accuracy']) document.getElementById(id).value='';
       document.getElementById('location-status').textContent=''; document.getElementById('request-result').hidden=true;
       status.textContent='Request received. Swagg Daddys will contact you about availability and pricing. Your appointment is not confirmed yet.';

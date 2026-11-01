@@ -13,7 +13,7 @@ try { qa = JSON.parse(await readFile('.openai/qa.json','utf8')); } catch {}
 if (qa) { env.OWNER_USERNAME='owner'; env.OWNER_PASSWORD_HASH=await hashPassword(qa.password); }
 const store = localStore('.local-data/inbox.sqlite');
 const api = createApi({ store, env });
-const publicFiles = new Set(['/index.html','/site-config.js','/intake.js','/owner/index.html','/owner/owner.css','/owner/owner.js']);
+const publicFiles = new Set(['/index.html','/site-config.js','/intake.js','/vin.js','/vin-core.js','/privacy.html','/owner/index.html','/owner/owner.css','/owner/owner.js']);
 const types = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.webp':'image/webp' };
 const root = resolve('.');
 const server = createServer(async (req,res) => {

@@ -19,7 +19,7 @@ function contactLink(number, kind = 'tel') { return `${kind}:${number.replace(/[
 function shortDate(date) { return new Date(date).toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
 function render() {
   const query = $('search').value.trim().toLowerCase(); const filter = $('status-filter').value;
-  const visible = items.filter(item => (!filter || item.status === filter) && (!query || [item.name,item.phone,item.vehicle,item.location].join(' ').toLowerCase().includes(query)));
+  const visible = items.filter(item => (!filter || item.status === filter) && (!query || [item.name,item.phone,item.vehicle,item.vin,item.location].join(' ').toLowerCase().includes(query)));
   $('cards').replaceChildren();
   for (const customer of visible) {
     const card = el('article', undefined, 'customer'); const top = el('div', undefined, 'customer-heading');
@@ -57,6 +57,29 @@ async function openCustomer(id) {
     $('text-customer').href = contactLink(item.dialNumber, 'sms');
     fact('Requested', shortDate(item.createdAt)); fact('Urgency', item.urgency); fact('Issue', item.issue); fact('Location', item.location);
     if (item.gps) { const map = el('a', 'Open vehicle location in Maps'); map.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(item.gps.latitude + ',' + item.gps.longitude); map.target='_blank'; map.rel='noopener noreferrer'; fact('Shared GPS', map); }
+    if (item.vin) {
+      fact('VIN', item.vin);
+      if (item.vehicleSpecs) fact('Vehicle specifications (customer supplied)', Object.entries(item.vehicleSpecs).map(([key,value]) => key+': '+value).join(' · ') || 'Not supplied');
+      const history = el('div'); const button=el('button','View history for this VIN','button secondary compact'); button.type='button'; history.append(button); fact('Vehicle history',history);
+      let cursor=null, started=false;
+      button.addEventListener('click', async () => {
+        button.disabled=true;
+        try {
+          const result=await api('/vehicles/'+encodeURIComponent(item.vin)+'/history'+(cursor?'?before='+encodeURIComponent(cursor):''));
+          if (active?.id!==item.id) return;
+          if (!started) { history.append(el('p','Requests and work recorded by Swagg Daddys. Completed jobs are marked below.')); started=true; }
+          for (const visit of result.items) {
+            const row=el('div',undefined,'fact');
+            row.append(el('strong',shortDate(visit.createdAt)+' · '+visit.status+(visit.id===item.id?' · Current request':'')),el('p',visit.issue),el('p',visit.notes || 'No service notes recorded.'));
+            if (visit.completedAt) row.append(el('p','Marked completed: '+shortDate(visit.completedAt)));
+            const open=el('button','Open request','button secondary compact'); open.type='button'; open.addEventListener('click',()=>openCustomer(visit.id)); row.append(open); history.append(row);
+          }
+          if (!result.items.length) history.append(el('p','No saved history for this VIN.'));
+          cursor=result.next; button.hidden=!cursor; button.textContent='Load older history';
+        } catch(error) { $('detail-notice').textContent=error.message; }
+        finally { button.disabled=false; }
+      });
+    }
     fact('Customer details', item.details || 'No additional details.');
     $('job-status').value = item.status; $('owner-notes').value = item.notes || ''; $('detail-notice').textContent = ''; $('detail-notice').classList.remove('error');
     $('customer-dialog').showModal(); notice('');

@@ -1,3 +1,4 @@
+import { normalizeVin, validVin, specFields } from '../vin-core.js';
 import { randomUUID } from 'node:crypto';
 import { configured, cookieValue, digest, sessionCookie, SESSION_MS, token, verifyPassword } from './auth.mjs';
 
@@ -132,6 +133,15 @@ export function createApi({ store, env = process.env, now = Date.now }) {
           location: text(form.get('location'), 120), urgency: text(form.get('urgency'), 80), issue: text(form.get('issue'), 160),
           details: text(form.get('details') || '', 2000, false), status: 'New', notes: '', media: []
         };
+        record.vin = normalizeVin(text(form.get('vin') || '', 40, false));
+        if (record.vin && !validVin(record.vin)) fail(400, 'Enter a valid 17-character VIN, or leave it blank.');
+        record.vehicleSpecs = {};
+        if (record.vin && form.get('vin_specs')) {
+          let specs;
+          try { specs = JSON.parse(text(form.get('vin_specs'), 2048, false)); } catch { fail(400, 'Please check the vehicle specifications.'); }
+          if (!specs || typeof specs !== 'object' || Array.isArray(specs)) fail(400, 'Please check the vehicle specifications.');
+          for (const key of Object.keys(specFields)) if (specs[key] !== undefined) record.vehicleSpecs[key] = text(specs[key],120,false);
+        }
         const digits = record.phone.replace(/\D/g, '');
         if (digits.length < 7 || digits.length > 15 || !/^[+\d\s().-]+$/.test(record.phone)) fail(400, 'Enter a valid phone number.');
         record.dialNumber = (record.phone.trim().startsWith('+') ? '+' : '') + digits;
@@ -146,7 +156,6 @@ export function createApi({ store, env = process.env, now = Date.now }) {
         }
         const files = form.getAll('issue_media').filter(f => typeof f !== 'string' && f.size > 0);
         if (files.length > 3 || files.reduce((sum,f) => sum + f.size, 0) > MAX_MEDIA_BYTES) fail(413, 'Choose up to 3 files, under 4 MB combined.');
-        if (files.length && record.urgency !== URGENCIES[2]) fail(400, 'Media is available for flexible requests.');
         if (files.filter(f => f.type.startsWith('video/')).length > 1) fail(400, 'Choose at most one video.');
         const uploads = [];
         for (const file of files) {
@@ -184,6 +193,18 @@ export function createApi({ store, env = process.env, now = Date.now }) {
         const items = (await Promise.all(selected.map(key => store.get(key)))).filter(Boolean).map(({ value, etag }) => ({ ...publicRecord(value), revision: etag }));
         return json({ items, next: keys.length > 50 ? selected.at(-1).slice(9) : null, statuses: STATUSES });
       }
+      const historyMatch = route.match(/^\/vehicles\/([A-HJ-NPR-Z0-9]{17})\/history$/);
+      if (historyMatch && request.method === 'GET') {
+        const before = url.searchParams.get('before');
+        if (before && !idPattern.test(before)) fail(400, 'Invalid page.');
+        const keys = (await store.keys('requests/')).sort().reverse().filter(key => !before || key < 'requests/' + before);
+        const matches = [];
+        for (const key of keys) {
+          const entry = await store.get(key);
+          if (entry?.value.vin === historyMatch[1]) { matches.push(entry.value); if (matches.length === 51) break; }
+        }
+        return json({items:matches.slice(0,50),next:matches.length>50 ? matches[49].id : null});
+      }
       const match = route.match(/^\/requests\/([^/]+)(?:\/media\/([a-f0-9-]{36}))?$/);
       if (!match || !idPattern.test(match[1])) fail(404, 'Not found.');
       const key = 'requests/' + match[1];
@@ -207,6 +228,7 @@ export function createApi({ store, env = process.env, now = Date.now }) {
         const notes = text(body.notes ?? '', 4000, false);
         if (body.revision !== entry.etag) fail(409, 'This request changed. Reload it before saving.');
         const record = { ...entry.value, status: body.status, notes, updatedAt: new Date(now()).toISOString() };
+        if (body.status === 'Completed' && entry.value.status !== 'Completed') record.completedAt = record.updatedAt;
         if (!await store.put(key, record, entry.etag)) fail(409, 'This request changed. Reload it before saving.');
         const latest = await store.get(key);
         return json({ ...latest.value, revision: latest.etag });

@@ -112,3 +112,47 @@ test('attachment write failure cleans stored media and never reports success', a
   const api=createApi({store,env});const data=form(fixture(),jpeg());data.append('issue_media',jpeg(),'second.jpg');
   try{assert.equal((await api(request('/requests',{method:'POST',body:data}),{ip:'failure'})).status,503);assert.deepEqual(await base.keys('requests/'),[]);assert.deepEqual(await base.keys('media/'),[]);}finally{base.close();}
 });
+
+test('all urgency levels accept photos and VIN persists in owner-only vehicle history', async()=>{
+  const store=localStore(); const api=createApi({store,env});
+  const vin='1HGCM82633A004352';
+  try {
+    for (const [i,urgency] of ['Urgent — vehicle is stranded','Soon — needs attention','Flexible — I can wait'].entries()) {
+      const response=await api(request('/requests',{method:'POST',body:form(fixture({urgency,vin:vin.toLowerCase(),vin_specs:JSON.stringify({year:'2003',make:'HONDA',model:'Accord',unexpected:'ignored'})}),jpeg())}),{ip:'vin-'+i});
+      assert.equal(response.status,201,await response.text());
+    }
+    const other=await api(request('/requests',{method:'POST',body:form(fixture({vin:'5YJSA1E26HF000337'}))}),{ip:'other'});
+    assert.equal(other.status,201);
+    const path='/vehicles/'+vin+'/history';
+    assert.equal((await api(request(path))).status,401);
+    const auth=await login(api); const response=await api(request(path,auth));
+    assert.equal(response.status,200); const history=await response.json(); assert.equal(history.items.length,3);
+    assert.ok(history.items.every(i=>i.vin===vin && i.media.length===1));
+    assert.equal(history.items[0].vehicleSpecs.make,'HONDA'); assert.equal(history.items[0].vehicleSpecs.unexpected,undefined);
+    assert.equal(history.next,null);
+    const record=(await (await api(request('/requests/'+history.items[0].id,auth))).json());
+    const update=await api(request('/requests/'+record.id,{...auth,method:'PATCH',body:{status:'Completed',notes:'Replaced starter.',revision:record.revision}}));
+    assert.equal(update.status,200); const completed=await update.json(); assert.ok(completed.completedAt);
+    const after=await (await api(request(path,auth))).json(); assert.ok(after.items.some(i=>i.status==='Completed'&&i.notes==='Replaced starter.'));
+    await api(request('/logout',{...auth,method:'POST',body:{}})); assert.equal((await api(request(path,auth))).status,401);
+  } finally {store.close();}
+});
+test('malformed optional VIN and specifications are rejected, while blank VIN keeps manual entry usable', async()=>{
+  for (const fields of [{vin:'1HGCM82633AOO4352'},{vin:'123'},{vin:'1HGCM82633A004352',vin_specs:'[]'},{vin:'1HGCM82633A004352',vin_specs:'bad JSON'},{vin:'1HGCM82633A004352',vin_specs:'{"make":42}'}]) {
+    const store=localStore(); const api=createApi({store,env});
+    try {assert.equal((await api(request('/requests',{method:'POST',body:form(fixture(fields))}),{ip:'invalid-vin'})).status,400);assert.deepEqual(await store.keys('requests/'),[]);} finally {store.close();}
+  }
+  const store=localStore();const api=createApi({store,env});
+  try {assert.equal((await api(request('/requests',{method:'POST',body:form(fixture({vin:''}))}),{ip:'manual'})).status,201);} finally {store.close();}
+});
+test('VIN history paginates across all matching requests without including another vehicle', async()=>{
+  const store=localStore();const api=createApi({store,env});const vin='1HGCM82633A004352';
+  try {
+    for(let i=0;i<52;i++) {const id=(1793458800000+i)+'-00000000-0000-4000-8000-000000000001';await store.put('requests/'+id,{id,vin,createdAt:new Date().toISOString(),status:'New'});}
+    await store.put('requests/1793458800099-00000000-0000-4000-8000-000000000001',{id:'1793458800099-00000000-0000-4000-8000-000000000001',vin:'5YJSA1E26HF000337'});
+    const auth=await login(api);const path='/vehicles/'+vin+'/history';
+    const first=await (await api(request(path,auth))).json();assert.equal(first.items.length,50);assert.ok(first.next);
+    const second=await (await api(request(path+'?before='+first.next,auth))).json();assert.equal(second.items.length,2);assert.equal(second.next,null);
+    assert.equal(new Set([...first.items,...second.items].map(i=>i.id)).size,52);
+  } finally {store.close();}
+});
