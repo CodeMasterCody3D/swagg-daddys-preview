@@ -39,6 +39,32 @@ function requestVin(item) {
   if(item.vinSubmitted&&item.vinSubmitted!==item.vin&&item.vin)box.append(el('span','As entered: '+item.vinSubmitted,'small muted'));
   return box;
 }
+// Driving miles from where the owner is right now to the customer's shared GPS.
+// After the first allowed lookup it runs by itself each time a request is opened.
+const MILEAGE_AUTO='mileage-auto';
+function mileage(item) {
+  const box=el('div',undefined,'mileage-box');const result=el('p','Uses your current location: first 30 driving miles included, $2.00 per mile after.','small muted');
+  const button=el('button','Miles from my location','button secondary compact');button.type='button';
+  const run=()=>{
+    if(!navigator.geolocation){result.textContent='This phone cannot share its location here.';return;}
+    button.disabled=true;result.textContent='Finding your location…';
+    navigator.geolocation.getCurrentPosition(async position=>{
+      try{
+        const from=position.coords.latitude.toFixed(6)+','+position.coords.longitude.toFixed(6),to=item.gps.latitude.toFixed(6)+','+item.gps.longitude.toFixed(6);
+        const quote=await api('/route?from='+from+'&to='+to);
+        try{localStorage.setItem(MILEAGE_AUTO,'1');}catch{}
+        invoices.setMiles(item.id,quote.miles);
+        const fee=(quote.feeCents/100).toFixed(2);
+        result.textContent=(quote.source==='driving'?quote.miles+' driving miles':'About '+quote.miles+' miles (estimate — routing service unavailable)')+' · '+(quote.overMiles>0?quote.overMiles+' mi over 30 × $2.00 = $'+fee+' mileage · $'+(65+quote.feeCents/100).toFixed(2)+' with the $65 diagnostic':'within 30 miles — no mileage fee, $65.00 diagnostic')+'. Added to this request’s invoice mileage box.';
+      }catch(error){result.textContent=error.message;}
+      finally{button.disabled=false;}
+    },error=>{button.disabled=false;result.textContent=error.code===1?'Location is off for the owner app. Allow it in phone settings to work out mileage.':'Your location could not be found. Try again outside or with GPS on.';},{enableHighAccuracy:true,timeout:15000,maximumAge:120000});
+  };
+  button.addEventListener('click',run);box.append(button,result);
+  let auto=false;try{auto=localStorage.getItem(MILEAGE_AUTO)==='1';}catch{}
+  if(auto)setTimeout(run,0);
+  return box;
+}
 function jobTools(item) {
   const panel=el('details',undefined,'job-tools');
   panel.append(el('summary','Tool planning for this vehicle'));
@@ -128,6 +154,7 @@ async function openCustomer(id) {
     }
     fact('Tools and repair references',jobTools(item));
     if(!item.deletedAt){const invoiceButton=el('button','Create or edit invoice','button secondary compact');invoiceButton.type='button';invoiceButton.addEventListener('click',()=>invoices.open(item));fact('Invoice',invoiceButton);}
+    if(!item.deletedAt&&Number.isFinite(item.gps?.latitude)&&Number.isFinite(item.gps?.longitude))fact('Mileage',mileage(item));
     if(item.consentAt)fact('Service request disclosure accepted',shortDate(item.consentAt));
     $('update-form').hidden=Boolean(item.deletedAt); $('delete-request').hidden=Boolean(item.deletedAt); $('restore-request').hidden=!item.deletedAt; $('delete-confirmation').hidden=true;
     if (item.deletedAt) fact('Moved to Trash',shortDate(item.deletedAt));

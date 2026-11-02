@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { findManuals, manualResponse } from './manuals.mjs';
 import { createManualBrowser, ManualError } from './manual-browser.mjs';
 import { createInvoices } from './invoices.mjs';
+import { drivingMiles, parsePoint } from './route.mjs';
 import { createVehicleResearch } from './vehicle-research.mjs';
 import { LensReadError, MAX_LENS_PHOTO_BYTES, readGoogleVinPhoto } from './lens.mjs';
 import { configured, cookieValue, digest, sessionCookie, SESSION_MS, token, verifyPassword } from './auth.mjs';
@@ -56,7 +57,7 @@ function validMedia(bytes, mime) {
 }
 
 // The adapter uses conditional writes, so rate limits and owner edits are safe across function instances.
-export function createApi({ store, invoices = null, env = process.env, now = Date.now, lensReader = readGoogleVinPhoto, research = createVehicleResearch(), manualBrowser = createManualBrowser(), notifications = createPushService({store, env, now}) }) {
+export function createApi({ store, invoices = null, routeMiles = drivingMiles, env = process.env, now = Date.now, lensReader = readGoogleVinPhoto, research = createVehicleResearch(), manualBrowser = createManualBrowser(), notifications = createPushService({store, env, now}) }) {
   const invoiceStore = invoices || createInvoices({ store, now });
   async function throttle(key, limit, windowMs) {
     for (let attempt = 0; attempt < 6; attempt++) {
@@ -307,6 +308,13 @@ export function createApi({ store, invoices = null, env = process.env, now = Dat
         return json({items:matches.slice(0,50),next:matches.length>50 ? matches[49].id : null});
       }
       // Opening a request in the owner app marks it checked: its reminders stop.
+      // Driving miles from the owner's current location to a customer (mileage fee).
+      if (route === '/route' && request.method === 'GET') {
+        const from = parsePoint(url.searchParams.get('from')), to = parsePoint(url.searchParams.get('to'));
+        if (!from || !to) fail(400, 'Both locations are needed to work out mileage.');
+        await throttle('route-' + digest(auth.key), 30, 60 * 1000);
+        return json(await routeMiles(from, to));
+      }
       // Owner invoice for a request: read (a fresh draft if none yet) and save.
       const invoiceMatch = route.match(/^\/requests\/(\d{13}-[0-9a-f-]{36})\/invoice$/);
       if (invoiceMatch && ['GET','PUT'].includes(request.method)) {

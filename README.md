@@ -21,6 +21,12 @@ The customer site keeps its logo, card artwork, large Call Now button, Text Me l
 - In-page AI chat on both the customer form and private owner dashboard. The requested integration must stay inside the page, use no paid AI API, and support manual conversation; automatic hints/autofill are optional. It is not implemented. Duck.ai currently sends `X-Frame-Options: SAMEORIGIN` and a CSP `frame-ancestors` restricted to DuckDuckGo domains, so an ordinary embed on this domain is blocked. A supported embedded provider or local model remains to be selected; do not represent an external chat link as this feature.
 - Background Android request alerts still require Firebase configuration and an end-to-end phone test. The native notification code and a standalone phone sound test are included in the owner app update described below.
 
+## Mileage from the owner's live location
+
+A request with the customer's GPS shows **Miles from my location** in the owner app. It takes the owner phone's current location and asks `GET /api/route?from=lat,lng&to=lat,lng` (owner session, 30 per minute) for driving miles. The server uses the free OpenStreetMap routing service (OSRM, `router.project-osrm.org`). If that is down, it returns an estimate (straight line × 1.25) labeled as one. The fee is first 30 driving miles included, $2.00 per mile after, worked out from the miles rounded to a tenth so the fee matches what is shown. The miles fill the invoice's mileage box. After the first allowed lookup it runs automatically whenever a request is opened.
+
+Owner app 1.0.6 turns on WebView location for swaggdaddys.com only (`NavigationPolicy.trustedOrigin`) and asks Android for location the first time. Both points go to the server and OSRM to work out the route; they are not stored.
+
 ## Invoices
 
 Each request has **Create or edit invoice** in the owner app. The editor has status (Draft, Sent, Paid, Void), date, bill-to, vehicle (description, VIN, odometer), customer concern, work performed, and line items for labor (hours × rate; the last rate is remembered on the phone), parts (part no., qty × unit price) and fees. The fees start with the $65 diagnostic fee, and **Add mileage fee** turns driving miles into "first 30 included, $2.00/mi after". It also has discount, sales tax on parts only (starts at 10%, editable per invoice, 0–20%), amount paid with payment method, recommended service, and terms. A live preview of the finished invoice updates as you type.

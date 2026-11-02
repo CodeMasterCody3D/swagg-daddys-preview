@@ -39,6 +39,7 @@ export function mountInvoiceEditor({ api }) {
   dialog.setAttribute('aria-labelledby', 'invoice-title');
   document.body.append(dialog);
   let request = null, invoice = null;
+  const milesByRequest = new Map(); // filled by the request screen's "Miles from my location"
 
   const field = (label, input, cls = '') => { const id = 'inv-' + Math.random().toString(36).slice(2, 9); input.id = id; return el('div', { className:'inv-field ' + cls }, el('label', { htmlFor:id, textContent:label }), input); };
   const input = (value = '', props = {}) => el('input', { value, autocomplete:'off', ...props });
@@ -144,7 +145,7 @@ export function mountInvoiceEditor({ api }) {
     const parts = lineEditor('Parts', [['description','Part'],['partNumber','Part no.',{ className:'n' }],['qty','Qty',{ inputMode:'decimal', className:'n' }],['unit','Unit $',{ inputMode:'decimal', className:'n' }]], form.parts, () => ({ description:'', partNumber:'', qty:'1', unit:'' }), '+ Add part');
     const fees = lineEditor('Fees', [['description','Fee'],['amount','Amount $',{ inputMode:'decimal', className:'n' }]], form.fees, () => ({ description:'', amount:'' }), '+ Add fee');
     // Mileage: driving miles from where the mechanic started; first 30 are free, $2/mi after.
-    const miles = input('', { inputMode:'decimal', placeholder:'Driving miles' });
+    const miles = input(milesByRequest.get(request.id) ?? '', { inputMode:'decimal', placeholder:'Driving miles' });
     const addMiles = el('button', { type:'button', className:'button secondary compact', textContent:'Add mileage fee' });
     addMiles.addEventListener('click', () => {
       const row = mileageRow(miles.value); if (!row) return;
@@ -188,6 +189,7 @@ export function mountInvoiceEditor({ api }) {
   }
 
   return {
+    setMiles(id, value) { milesByRequest.set(id, String(value)); },
     async open(item) {
       request = item; form = null;
       dialog.replaceChildren(el('p', { className:'notice', textContent:'Loading invoice…' }));
