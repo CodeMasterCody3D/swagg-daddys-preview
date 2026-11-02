@@ -15,9 +15,32 @@ export async function hashPassword(password) {
   return `scrypt:${salt}:${derived.toString('hex')}`;
 }
 
-export function configured(env) {
-  return /^(?:scrypt:[a-f0-9]{32}:[a-f0-9]{128}|pbkdf2:600000:[a-f0-9]{32}:[a-f0-9]{64})$/.test(env.OWNER_PASSWORD_HASH || '');
+const passwordHashPattern = /^(?:scrypt:[a-f0-9]{32}:[a-f0-9]{128}|pbkdf2:600000:[a-f0-9]{32}:[a-f0-9]{64})$/;
+const usernameKey = value => typeof value === 'string' ? value.trim().toLowerCase() : '';
+
+export function ownerAccounts(env) {
+  const accounts = new Map();
+  function add(username, passwordHash) {
+    const key = usernameKey(username);
+    if (!key || key.length > 100 || typeof passwordHash !== 'string' || !passwordHashPattern.test(passwordHash) || accounts.has(key)) return;
+    accounts.set(key, { username: username.trim(), passwordHash });
+  }
+  // Keep the original owner account and its existing sessions working.
+  add(env.OWNER_USERNAME || 'owner', env.OWNER_PASSWORD_HASH);
+  try {
+    const additional = JSON.parse(env.OWNER_ACCOUNTS_JSON || '[]');
+    if (Array.isArray(additional) && additional.length <= 50) {
+      for (const account of additional) add(account?.username, account?.passwordHash);
+    }
+  } catch { /* Invalid optional configuration never grants access. */ }
+  return [...accounts.values()];
 }
+
+export function ownerAccount(env, username) {
+  return ownerAccounts(env).find(account => usernameKey(account.username) === usernameKey(username));
+}
+
+export function configured(env) { return ownerAccounts(env).length > 0; }
 
 export async function verifyPassword(password, encoded) {
   if (encoded.startsWith('pbkdf2:')) {
