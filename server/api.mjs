@@ -205,7 +205,7 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
         } catch (error) {
           await Promise.allSettled(saved.map(key => store.remove(key))); throw error;
         }
-        try { await notifications.notify(context.waitUntil?.bind(context),record); } catch { console.error('Owner notification delivery unavailable'); }
+        try { await notifications.notify(context.waitUntil?.bind(context),record); await notifications.schedule?.(record); } catch { console.error('Owner notification delivery unavailable'); }
         return json({ received: true, reference: record.id }, 201);
       }
 
@@ -271,6 +271,9 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
         }
         return json({items:matches.slice(0,50),next:matches.length>50 ? matches[49].id : null});
       }
+      // Opening a request in the owner app marks it checked: its reminders stop.
+      const seenMatch = route.match(/^\/requests\/(\d{13}-[0-9a-f-]{36})\/seen$/);
+      if (seenMatch && request.method === 'POST') { await notifications.checked?.(seenMatch[1]); return json({ checked:true }); }
       const match = route.match(/^\/requests\/([^/]+)(?:\/media\/([a-f0-9-]{36})|\/(restore))?$/);
       if (!match || !idPattern.test(match[1])) fail(404, 'Not found.');
       const key = 'requests/' + match[1];
@@ -297,6 +300,7 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
         const record = { ...entry.value, status: body.status, notes, updatedAt: new Date(now()).toISOString() };
         if (body.status === 'Completed' && entry.value.status !== 'Completed') record.completedAt = record.updatedAt;
         if (!await store.put(key, record, entry.etag)) fail(409, 'This request changed. Reload it before saving.');
+        await notifications.checked?.(match[1]);
         const latest = await store.get(key);
         return json({ ...latest.value, revision: latest.etag });
       }
@@ -309,6 +313,7 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
         if (restoring) delete record.deletedAt;
         else record.deletedAt = record.updatedAt;
         if (!await store.put(key,record,entry.etag)) fail(409, 'This request changed. Reload it before trying again.');
+        if (!restoring) await notifications.checked?.(match[1]);
         return json({ ...record, revision:(await store.get(key)).etag });
       }
       fail(405, 'Method not allowed.');

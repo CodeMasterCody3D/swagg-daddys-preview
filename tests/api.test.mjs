@@ -240,3 +240,17 @@ test('partial or mistaken customer information is saved for owner follow-up inst
     assert.equal(record.name,'Name not provided');assert.equal(record.phone,'please contact my spouse');assert.equal(record.dialNumber,'');assert.equal(record.vin,'');assert.equal(record.vinSubmitted,'not sure 123');assert.equal(record.gps,undefined);assert.equal(record.vehicle,'Vehicle details not provided');
   } finally {store.close();}
 });
+test('a saved request schedules repeat alerts; opening it in the owner app (with CSRF) marks it checked',async()=>{
+  const store=localStore();const calls=[];
+  const notifications={ready:true,notify:async()=>{calls.push('notify');},schedule:async record=>{calls.push('schedule:'+record.urgency);},checked:async id=>{calls.push('checked:'+id);},register:async()=>{},remove:async()=>{},signOut:async()=>{}};
+  const api=createApi({store,env,notifications});
+  try {
+    const response=await api(request('/requests',{method:'POST',body:form(fixture({urgency:'Stranded — I can’t drive it / stuck on the road'}))}),{ip:'reminder-test'});
+    assert.equal(response.status,201);const {reference}=await response.json();
+    assert.deepEqual(calls,['notify','schedule:Stranded — I can’t drive it / stuck on the road']);
+    const auth=await login(api);
+    assert.equal((await api(request('/requests/'+reference+'/seen',{method:'POST',cookie:auth.cookie,body:{}}))).status,403);
+    assert.equal((await api(request('/requests/'+reference+'/seen',{...auth,method:'POST',body:{}}))).status,200);
+    assert.equal(calls.at(-1),'checked:'+reference);
+  } finally { store.close(); }
+});

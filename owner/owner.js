@@ -56,7 +56,7 @@ function render() {
     top.append(el('span', customer.status, 'badge')); card.append(top, el('p', customer.vehicle), el('p', customer.issue));
     card.append(requestVin(customer));
     const phone = el(customer.dialNumber?'a':'p', customer.phone || 'Phone not provided', 'phone'); if(customer.dialNumber)phone.href = contactLink(customer.dialNumber); phone.setAttribute('aria-label', `Call ${customer.name} at ${customer.phone}`); card.append(phone);
-    const urgent = customer.urgency.startsWith('Urgent'); card.append(el('span', customer.urgency.split(' — ')[0], 'badge' + (urgent ? ' urgent' : '')));
+    const urgent = /^(Urgent|Stranded)/.test(customer.urgency); card.append(el('span', customer.urgency.split(' — ')[0], 'badge' + (urgent ? ' urgent' : '')));
     const bottom = el('div', undefined, 'customer-bottom'); bottom.append(el('span', shortDate(customer.createdAt), 'small'));
     const view = el('button', 'View request', 'button secondary compact'); view.addEventListener('click', () => openCustomer(customer.id)); bottom.append(view); card.append(bottom); $('cards').append(card);
   }
@@ -126,6 +126,8 @@ async function openCustomer(id) {
     if (item.deletedAt) fact('Moved to Trash',shortDate(item.deletedAt));
     $('job-status').value = item.status; $('owner-notes').value = item.notes || ''; $('detail-notice').textContent = ''; $('detail-notice').classList.remove('error');
     $('customer-dialog').showModal(); notice('');vehicleReport?.run();
+    // Opening the request counts as checked: the server stops its repeat alerts.
+    if (!item.deletedAt) api('/requests/' + encodeURIComponent(item.id) + '/seen', { method:'POST', body:'{}' }).catch(() => {});
     for (const file of item.media) {
       const box = el('div', undefined, 'attachment'); const button = el('button', 'Load ' + file.name, 'button secondary compact'); box.append(button); $('attachments').append(box);
       const loadAttachment = async () => {
