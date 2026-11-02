@@ -21,6 +21,19 @@ The customer site keeps its logo, card artwork, large Call Now button, Text Me l
 - In-page AI chat on both the customer form and private owner dashboard. The requested integration must stay inside the page, use no paid AI API, and support manual conversation; automatic hints/autofill are optional. It is not implemented. Duck.ai currently sends `X-Frame-Options: SAMEORIGIN` and a CSP `frame-ancestors` restricted to DuckDuckGo domains, so an ordinary embed on this domain is blocked. A supported embedded provider or local model remains to be selected; do not represent an external chat link as this feature.
 - Background Android request alerts still require Firebase configuration and an end-to-end phone test. The native notification code and a standalone phone sound test are included in the owner app update described below.
 
+## Repeat alerts until a request is opened
+
+Every new request keeps alerting the owner until he opens it in the owner app (or changes its status, or moves it to Trash):
+
+| Customer chose | Each alert | Repeats |
+| --- | --- | --- |
+| **Stranded — I can’t drive it / stuck on the road** or **Urgent — need help today** (older "Urgent — vehicle is stranded" too) | Three rings and a triple vibration ("URGENT ·" in the title) | every 15 minutes |
+| Soon, Flexible, or none | Normal single ding | every hour |
+
+Repeats are titled "Still waiting ·". The scheduled function (every 5 minutes) sends due reminders, so a repeat can arrive up to 5 minutes after its 15- or 60-minute mark. Reminders stop after 7 days. Reminder state is kept in `push-reminders/<request id>`, separate from the request record so owner edits never conflict with it. Opening a request calls `POST /api/requests/<id>/seen` (owner session + CSRF).
+
+On the phone, urgent alerts use their own Android channel, "Stranded and urgent requests", with a bundled three-ring sound (`res/raw/urgent_triple.ogg`, 2.1 s). Android fixes a channel's sound when it is created, which is why it is a second channel; if the owner turns that channel off, urgent alerts fall back to the normal one. Notifications → Test sound now offers "Normal request — one ding" and "Stranded / urgent — three rings". Owner app 1.0.6.
+
 ## Android owner alerts
 
 The owner app's three-dot menu includes **Notifications**, with **Enable alerts**, **Test sound**, and **Phone settings**. Test sound posts a local notification without enrolling the phone for customer alerts. New request alerts require owner sign-in, the Firebase server connection, and Android notification permission. The sound and vibration follow the phone's notification settings.

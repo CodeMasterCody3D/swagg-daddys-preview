@@ -9,6 +9,7 @@ public final class OwnerMessagingService extends FirebaseMessagingService {
         if(!"service_request".equals(message.getData().get("type")))return;
         String eventId=message.getData().get("eventId");
         if(eventId!=null && eventId.matches("[a-f0-9-]{36}"))OwnerAlerts.show(this,eventId,
-                message.getData().get("customerName"),message.getData().get("requestSummary"));
+                message.getData().get("customerName"),message.getData().get("requestSummary"),
+                NotificationContent.urgent(message.getData().get("priority")),"1".equals(message.getData().get("reminder")));
     }
 }

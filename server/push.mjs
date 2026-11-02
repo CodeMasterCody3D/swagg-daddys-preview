@@ -2,6 +2,13 @@ import { sign, randomUUID } from 'node:crypto';
 import { digest } from './auth.mjs';
 
 const DAY = 86400000;
+const MINUTE = 60000;
+// Unopened requests keep alerting the owner until he opens them (or changes their
+// status). Stranded/urgent: every 15 minutes, with a three-ring sound on the
+// phone. Everything else: every hour, normal sound. Reminders stop after a week.
+export const REMINDER_MS = { urgent:15*MINUTE, normal:60*MINUTE };
+const REMINDER_LIMIT = 7*DAY;
+export const isUrgent = urgency => /^\s*(stranded|urgent)\b/i.test(typeof urgency === 'string' ? urgency : '');
 const devicePattern = /^[A-Za-z0-9_-]{20,80}$/;
 export const validDeviceId = value => typeof value === 'string' && devicePattern.test(value);
 const tokenValid = value => typeof value === 'string' && /^[A-Za-z0-9_:.-]{20,4096}$/.test(value);
@@ -54,9 +61,10 @@ export function fcmSender(env, fetcher = fetch, now = Date.now) {
   }
   return {
     ready:Boolean(account),
-    async send(token, eventId, preview) {
+    async send(token, eventId, preview, { priority = 'normal', reminder = false } = {}) {
       const bearer = await accessToken();
-      const data = { type:'service_request', eventId };
+      // The app picks the three-ring urgent channel from `priority`.
+      const data = { type:'service_request', eventId, priority: priority === 'urgent' ? 'urgent' : 'normal', reminder: reminder ? '1' : '0' };
       if (preview) {
         data.customerName = previewText(preview.customerName, 80) || 'Customer';
         data.requestSummary = previewText(preview.requestSummary, 160) || 'Tap to view the service request.';
@@ -104,24 +112,49 @@ export function createPushService({ store, env, now = Date.now, sender = fcmSend
         const entry=await store.get(deviceKey);if(!entry)return;
         const device=entry.value;
         if(device.expires<=now() || device.authVersion!==authVersion()){await store.remove(deviceKey);return;}
-        try { if(await sender.send(device.token,event.value.id,event.value.preview)==='unregistered')await store.remove(deviceKey); }
+        try { if(await sender.send(device.token,event.value.id,event.value.preview,{priority:event.value.priority,reminder:event.value.reminder})==='unregistered')await store.remove(deviceKey); }
         catch { pending.push(deviceKey); }
       }));
       if(!pending.length)await store.remove(key);
       else await store.put(key,{...event.value,devices:pending},event.etag);
     }
   }
-  async function notify(waitUntil, request) {
+  async function notify(waitUntil, request, { reminder = false } = {}) {
     if(!sender.ready)return;
     const devices=(await store.keys('push-devices/')).slice(0,10);
     if(!devices.length)return;
     const id=randomUUID();
     const key='push-outbox/'+String(now())+'-'+id;
-    await store.put(key,{id,devices,expires:now()+DAY,...(request ? {preview:notificationPreview(request)} : {})});
+    const priority=isUrgent(request?.urgency)?'urgent':'normal';
+    await store.put(key,{id,devices,expires:now()+DAY,priority,reminder,...(request ? {preview:notificationPreview(request)} : {})});
     // Persist first, then let Netlify finish delivery after the intake response.
     // The scheduled retry can recover if this process exits before delivery.
     const delivery = drain([key]).catch(() => {});
     if (waitUntil) waitUntil(delivery); else await delivery;
   }
-  return { ready:sender.ready,register,remove,signOut,notify,drain };
+  // Called when a request is saved. The scheduled function calls remind().
+  async function schedule(request) {
+    if(!sender.ready||!request?.id)return;
+    const urgent=isUrgent(request.urgency);
+    await store.put('push-reminders/'+request.id,{id:request.id,urgent,next:now()+(urgent?REMINDER_MS.urgent:REMINDER_MS.normal),until:now()+REMINDER_LIMIT});
+  }
+  // The owner opened the request, changed its status, or trashed it.
+  async function checked(id) { await store.remove('push-reminders/'+id); }
+  async function remind(waitUntil) {
+    if(!sender.ready)return;
+    // Bounded work per run; anything not reached is picked up on the next run.
+    let sent=0;
+    for(const key of (await store.keys('push-reminders/')).sort()) {
+      if(sent>=10)break;
+      const entry=await store.get(key);if(!entry)continue;
+      const reminder=entry.value;
+      if(reminder.next>now())continue;
+      const request=(await store.get('requests/'+reminder.id))?.value;
+      if(!request||request.deletedAt||(request.status&&request.status!=='New')||reminder.until<=now()){await store.remove(key);continue;}
+      // Move the next time forward before sending, so an overlapping run cannot double-send.
+      if(!await store.put(key,{...reminder,next:now()+(reminder.urgent?REMINDER_MS.urgent:REMINDER_MS.normal)},entry.etag))continue;
+      await notify(waitUntil,request,{reminder:true});sent++;
+    }
+  }
+  return { ready:sender.ready,register,remove,signOut,notify,drain,schedule,checked,remind };
 }
