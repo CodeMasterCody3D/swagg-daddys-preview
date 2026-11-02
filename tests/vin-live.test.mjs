@@ -4,13 +4,14 @@ import {createLiveVinScanner,captureVinFrame,cameraErrorMessage,frameSharpness} 
 import {readVinPhoto} from '../vin-reader.js';
 const vin='1HGCV2F62JA012802';
 const candidate=()=>({candidates:[{vin}],diagnostics:{status:'read'}});
+const settle=()=>new Promise(resolve=>setTimeout(resolve,0));
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 function fixture(options={}){
   const queue=[],matches=[],errors=[],delays=[];let stopped=0,calls=0,constraints;
   const stream={getTracks:()=>[{stop(){stopped++;}}]};
   const video={readyState:2,videoWidth:1920,videoHeight:1080,srcObject:null,async play(){},pause(){}};
-  const controller=createLiveVinScanner({video,getMedia:async c=>{constraints=c;return stream;},prepare:async()=>{},readFrame:async()=>{calls++;return candidate();},capture:()=>({frame:true}),score:()=>1,samplesPerRead:1,schedule:(fn,delay)=>{queue.push(fn);delays.push(delay);return fn;},cancel:fn=>{const index=queue.indexOf(fn);if(index>=0)queue.splice(index,1);},onMatch:(v,r)=>matches.push({vin:v,result:r}),onError:e=>errors.push(e),...options});
-  return {controller,video,stream,queue,matches,errors,delays,get stopped(){return stopped;},get calls(){return calls;},get constraints(){return constraints;},async tick(){const fn=queue.shift();assert.ok(fn,'scheduled frame exists');await fn();}};
+  const controller=createLiveVinScanner({video,getMedia:async c=>{constraints=c;return stream;},prepare:async()=>{},readFrame:async()=>{calls++;return candidate();},capture:()=>({frame:true}),score:()=>1,samplesPerRead:1,schedule:(fn,delay)=>{queue.push(fn);delays.push(delay);return fn;},cancel:fn=>{const index=queue.indexOf(fn);if(index>=0)queue.splice(index,1);},onMatch:(v,r)=>matches.push({vin:v,result:r}),onError:e=>errors.push(e),verify:async()=>false,...options});
+  return {controller,video,stream,queue,matches,errors,delays,get stopped(){return stopped;},get calls(){return calls;},get constraints(){return constraints;},async tick(){const fn=queue.shift();assert.ok(fn,'scheduled frame exists');await fn();await settle();}};
 }
 test('live camera requests rear video only, confirms two frames, then releases camera and fills once',async()=>{
   const f=fixture();await f.controller.start();assert.equal(f.constraints.audio,false);assert.equal(f.constraints.video.facingMode.ideal,'environment');
@@ -80,16 +81,42 @@ test('a captured camera frame without a barcode follows the existing Google Lens
   assert.deepEqual(calls,['barcode','google']);assert.equal(result.candidates[0].vin,vin);
 });
 
-test('live scan tries barcodes first, then confirms exact local text twice without a Google call',async()=>{
+test('printed text starts after the first barcode miss, runs alongside it, and two identical reads confirm offline',async()=>{
   const events=[];let closed=0;
   const f=fixture({readFrame:async()=>{events.push('barcode');return {candidates:[],diagnostics:{status:'no-vin'}};},makeTextReader:()=>({read:async()=>{events.push('text');return {candidates:[{vin,corrected:false}]};},close(){closed++;}})});
-  await f.controller.start();await f.tick();await f.tick();assert.deepEqual(events,['barcode','barcode']);
-  await f.tick();assert.equal(f.matches.length,0);await f.tick();
-  assert.deepEqual(events,['barcode','barcode','barcode','text','barcode','text']);
+  await f.controller.start();await f.tick();assert.deepEqual(events,['barcode','text']);assert.equal(f.matches.length,0);
+  await f.tick();
+  assert.deepEqual(events,['barcode','text','barcode','text']);
   assert.equal(f.matches[0].vin,vin);assert.equal(f.matches[0].result.candidates[0].method,'text');assert.equal(f.matches[0].result.barcodeCheck.status,'no-vin');assert.equal(closed,1);assert.equal(f.stopped,1);
 });
 
-test('corrected, checksum-invalid and ambiguous printed VINs never auto-fill',async()=>{
+test('a slow text read never holds up the barcode reader',async()=>{
+  let barcodes=0;const text=deferred();
+  const f=fixture({readFrame:async()=>++barcodes>=4?candidate():{candidates:[],diagnostics:{status:'no-vin'}},makeTextReader:()=>({read:()=>text.promise,close(){}})});
+  await f.controller.start();for(let i=0;i<5;i++)await f.tick();
+  assert.equal(barcodes,5);assert.equal(f.matches[0].vin,vin);
+});
+
+test('one printed-text read is enough when NHTSA confirms the VIN; a C-read-as-0 is repaired only when NHTSA confirms the fix',async()=>{
+  const confirmed=fixture({verify:async v=>v===vin,readFrame:async()=>({candidates:[],diagnostics:{status:'no-vin'}}),makeTextReader:()=>({read:async()=>({candidates:[{vin,corrected:false}]}),close(){}})});
+  await confirmed.controller.start();await confirmed.tick();
+  assert.equal(confirmed.matches[0].vin,vin);assert.equal(confirmed.matches[0].result.candidates[0].corrected,false);
+  const repaired=fixture({verify:async v=>v===vin,readFrame:async()=>({candidates:[],diagnostics:{status:'no-vin'}}),makeTextReader:()=>({read:async()=>({candidates:[{vin:'1HG0V2F62JA012802',corrected:false}]}),close(){}})});
+  await repaired.controller.start();await repaired.tick();
+  assert.equal(repaired.matches[0]?.vin,vin);assert.equal(repaired.matches[0].result.candidates[0].corrected,true);
+});
+
+test('Google Lens reads one frame if nothing is found after the wait, and only once',async()=>{
+  const timers=[];let lensCalls=0;
+  const f=fixture({lens:async frame=>{lensCalls++;assert.deepEqual(frame,{frame:true});return {candidates:[{vin,corrected:false}]};},lensAfterMs:4000,lensSchedule:(fn,ms)=>{timers.push([fn,ms]);return fn;},lensCancel:()=>{},
+    readFrame:async()=>({candidates:[],diagnostics:{status:'no-vin'}}),makeTextReader:()=>({read:()=>new Promise(()=>{}),close(){}})});
+  await f.controller.start();assert.equal(timers.length,1);assert.equal(timers[0][1],4000);
+  await f.tick();await timers[0][0]();await settle();
+  assert.equal(lensCalls,1);assert.equal(f.matches[0].vin,vin);assert.equal(f.matches[0].result.candidates[0].method,'lens');
+  await timers[0][0]();assert.equal(lensCalls,1);
+});
+
+test('corrected, checksum-invalid and ambiguous printed VINs never auto-fill without NHTSA confirmation',async()=>{
   const results=[{candidates:[{vin,corrected:true}]},{candidates:[{vin:'1HGCV2F62JA012803',corrected:false}]},{candidates:[{vin,corrected:false},{vin:'5J6YH287X8L000133',corrected:false}]}];
   const f=fixture({textAfterMisses:1,readFrame:async()=>({candidates:[],diagnostics:{status:'no-vin'}}),makeTextReader:()=>({read:async()=>results.shift(),close(){}})});
   await f.controller.start();for(let i=0;i<3;i++){await f.tick();assert.equal(f.matches.length,0);}f.controller.stop();

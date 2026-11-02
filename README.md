@@ -21,6 +21,16 @@ The customer site keeps its logo, card artwork, large Call Now button, Text Me l
 - In-page AI chat on both the customer form and private owner dashboard. The requested integration must stay inside the page, use no paid AI API, and support manual conversation; automatic hints/autofill are optional. It is not implemented. Duck.ai currently sends `X-Frame-Options: SAMEORIGIN` and a CSP `frame-ancestors` restricted to DuckDuckGo domains, so an ordinary embed on this domain is blocked. A supported embedded provider or local model remains to be selected; do not represent an external chat link as this feature.
 - Background Android request alerts still require Firebase configuration and an end-to-end phone test. The native notification code and a standalone phone sound test are included in the owner app update described below.
 
+## Barcode, printed text and Google Lens together
+
+**Take photo / chosen photo:** the barcode reader, Google Lens (when enabled) and the printed-text reader all start at once, and the first usable VIN wins. A barcode VIN is used as soon as it is read. A Lens VIN with a correct check digit is used straight away. Printed text is used once NHTSA confirms the VIN decodes to a real vehicle (year, make and model with no decoder error). If nothing qualifies, the results come back in the old order (Lens, then text, then barcode) for the customer to review.
+
+**Live scan:** the barcode reader runs every frame as before. After the first barcode miss, printed-text reading runs alongside it without pausing it. A text VIN is used when NHTSA confirms it, or when two reads agree exactly, which still works offline. If nothing is found after 4 seconds and Lens is enabled, one frame goes to Google Lens, once per scan (the server allows 5 Lens photos per 15 minutes per IP).
+
+**Fixing misread characters** (`vin-repair.js`): readings from several frames are combined character by character, and lookalike swaps (C/0, S/5, B/8, Z/2, G/6, D/0 and others, at most two per VIN) are tried. Candidates must follow the VIN position rules (check digit at position 9, no U/Z/0 at position 10, digits at positions 14–17) and pass the check digit, and up to 12 are checked with NHTSA at once. A repaired VIN is used only if NHTSA confirms it. Two different exact VINs in one reading are never guessed between. In a live check against NHTSA, `1HGCM82633A004352` misread as C→0 or 8→B, or as three different bad reads, was recovered; a single read with two mistakes returned no answer rather than a wrong VIN.
+
+The customer page no longer says scanning "stays on your device".
+
 ## Mileage from the owner's live location
 
 A request with the customer's GPS shows **Miles from my location** in the owner app. It takes the owner phone's current location and asks `GET /api/route?from=lat,lng&to=lat,lng` (owner session, 30 per minute) for driving miles. The server uses the free OpenStreetMap routing service (OSRM, `router.project-osrm.org`). If that is down, it returns an estimate (straight line × 1.25) labeled as one. The fee is first 30 driving miles included, $2.00 per mile after, worked out from the miles rounded to a tenth so the fee matches what is shown. The miles fill the invoice's mileage box. After the first allowed lookup it runs automatically whenever a request is opened.
