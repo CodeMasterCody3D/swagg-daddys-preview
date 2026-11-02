@@ -32,24 +32,32 @@ import { requestServiceLocation } from './request-location.js';
   document.getElementById('intake-disclosure').textContent = 'Your request, shared GPS coordinates, and selected files are sent privately to Swagg Daddys. Sending a request does not book an appointment.';
   const booking = [...document.querySelectorAll('.faq details')].find(item => item.querySelector('summary')?.textContent === 'Does this request book an appointment?');
   if (booking) booking.querySelector('p').textContent = 'No. Your request is sent to the mechanic for review. An appointment is booked only after you confirm the date, location, work, and price together.';
+  // Saves the form to the owner inbox. Also used by the Text me helper (text-helper.js),
+  // which adds a note so the owner knows the customer texted as well.
+  async function sendRequest({note='',onStatus=()=>{}}={}) {
+    await requestServiceLocation();
+    onStatus('Preparing your request…');
+    const prepared=await (window.SWAGG_MEDIA_READY || Promise.resolve({files:[...media.files],warnings:[]}));
+    const body=new FormData(form);body.delete('issue_media');for(const file of prepared.files)body.append('issue_media',file,file.name);
+    if(note)body.set('details',note+(String(body.get('details')||'').trim()?'\n\n'+body.get('details'):''));
+    onStatus('Sending your request…');
+    const response = await fetch(api + '/requests', { method:'POST', body, credentials:'omit' });
+    const data = await response.json().catch(()=>({}));
+    if (!response.ok || !data.received) throw new Error(data.error || 'Your request could not be sent. Please call or text 205-492-8772.');
+    return {reference:data.reference,warnings:prepared.warnings,files:prepared.files.length};
+  }
+  window.SWAGG_SEND_REQUEST = sendRequest;
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (submit.disabled || !form.reportValidity()) return;
     submit.disabled=true; media.disabled=true; showStatus('Preparing your request…');
     try {
       showStatus('Waiting for location permission. You can decline and still send your request.');
-      await requestServiceLocation();
-      showStatus('Preparing your request…');
-      const prepared=await (window.SWAGG_MEDIA_READY || Promise.resolve({files:[...media.files],warnings:[]}));
-      const body=new FormData(form);body.delete('issue_media');for(const file of prepared.files)body.append('issue_media',file,file.name);
-      showStatus('Sending your request…');
-      const response = await fetch(api + '/requests', { method:'POST', body, credentials:'omit' });
-      const data = await response.json().catch(()=>({}));
-      if (!response.ok || !data.received) throw new Error(data.error || 'Your request could not be sent. Please call or text 205-492-8772.');
+      const sent=await sendRequest({onStatus:showStatus});
       form.reset(); document.getElementById('media-box').hidden=false; document.getElementById('file-list').textContent='No files selected.';
       for (const id of ['latitude','longitude','accuracy']) document.getElementById(id).value='';
       document.getElementById('location-status').textContent=''; document.getElementById('request-result').hidden=true;
-      showStatus('Request received. Swagg Daddys will review your details. Your appointment is not confirmed yet.'+(prepared.warnings.length?' '+prepared.warnings.join(' '):''));
+      showStatus('Request received. Swagg Daddys will review your details. Your appointment is not confirmed yet.'+(sent.warnings.length?' '+sent.warnings.join(' '):''));
     } catch(error) { showStatus(error instanceof TypeError?'Please check your connection and try again, or call/text 205-492-8772.':error.message,true); }
     finally { submit.disabled=false;media.disabled=false; }
   });
