@@ -1,11 +1,12 @@
 import { validVin, decodedVehicle } from '../vin-core.js';
 
-const ROOT='https://charm.li/';
+const ROOT='https://lemon-manuals.la/';
+const BACKUP_ROOT='https://charm.li/';
 const normalized=value=>String(value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 const words=value=>String(value||'').toUpperCase().replace(/[^A-Z0-9]/g,' ').replace(/\s+/g,' ').trim();
 const aliases={RAM:'DODGEANDRAM',DODGE:'DODGEANDRAM',MERCEDESBENZ:'MERCEDESBENZ',VW:'VOLKSWAGEN',NISSAN:'NISSANDATSUN'};
-// Directory names observed on CHARM's make index; unknown makes still use the live index.
-const knownMakes=['Acura','Audi','BMW','Buick','Cadillac','Chevrolet','Chrysler','Daewoo','Daihatsu','Dodge and Ram','Eagle','Fiat','Ford','Freightliner','GMC','Geo','Honda','Hummer','Hyundai','Infiniti','Isuzu','Jaguar','Jeep','Kia','Land Rover','Lexus','Lincoln','Mazda','Mercedes Benz','Mercury','Mini','Mitsubishi','Nissan-Datsun','Oldsmobile','Peugeot','Plymouth','Pontiac','Porsche','Renault','SRT','Saab','Saturn','Scion','Smart','Subaru','Suzuki','Toyota','UD','Volkswagen','Volvo','Workhorse','Yugo'];
+// Directory names observed on LEMON's make index; unknown makes still use the live index.
+const knownMakes=['Acura','Alfa Romeo','American Motors','Audi','Austin','BMW','Buick','Cadillac','Checker','Chevrolet','Chrysler','Daewoo','Daihatsu','Dodge and Ram','Eagle','Fiat','Ford','Freightliner','GMC','General Motors','Genesis','Geo','Honda','Hummer','Hyundai','Infiniti','International','Isuzu','Jaguar','Jeep','Kia','Lancia','Land Rover','Lexus','Lincoln','MG','Mazda','Mercedes Benz','Mercury','Merkur','Mini','Mitsubishi','Nissan-Datsun','Oldsmobile','Opel','Peugeot','Plymouth','Pontiac','Porsche','Renault','Rivian','SRT','Saab','Saturn','Scion','Smart','Sterling','Subaru','Suzuki','Tesla','Toyota','Triumph','UD','VinFast','Volkswagen','Volvo','Workhorse','Yugo','ZAP'];
 const cache=new Map();
 function links(html,base) {
   const result=[];
@@ -45,17 +46,17 @@ export async function findManuals(record,{fetcher=fetch}={}) {
   }
   const vehicle=[specs.year,specs.make,specs.model].filter(Boolean).join(' ') || record.vehicle || 'Vehicle';
   const result={vehicle,specs,options:[],browseUrl:ROOT};
-  if(!specs.make||!specs.model||!/^\d{4}$/.test(String(specs.year)))return {...result,message:'Vehicle specifications are incomplete. Browse CHARM to select the car manually.'};
+  if(!specs.make||!specs.model||!/^\d{4}$/.test(String(specs.year)))return {...result,message:'Vehicle specifications are incomplete. Browse LEMON to select the car manually.'};
   const makeName=aliases[normalized(specs.make)]||normalized(specs.make);
   const known=knownMakes.find(name=>normalized(name)===makeName);
   let make=known?{url:ROOT+encodeURIComponent(known)+'/'}:null;
   if(!make){const makes=links(await page(ROOT,fetcher),ROOT).filter(link=>/^\/[^/]+\/$/.test(link.path));make=makes.find(link=>normalized(decodeURIComponent(link.path.split('/')[1]))===makeName);}
-  if(!make)return {...result,message:'CHARM does not list a matching make. No manual was selected.'};
+  if(!make)return {...result,message:'LEMON does not list a matching make. No manual was selected.'};
   result.browseUrl=make.url;
   const yearUrl=make.url+String(specs.year)+'/';
   let yearHtml;
   try{yearHtml=await page(yearUrl,fetcher);result.browseUrl=yearUrl;}
-  catch(error){return {...result,message:error.status===404?'CHARM does not list a manual directory for this model year.':'CHARM could not be reached just now. Try the VIN link again, or browse the make’s manuals below.'};}
+  catch(error){return {...result,message:error.status===404?'LEMON does not list a manual directory for this model year.':'LEMON could not be reached just now. Try again, or use the CHARM backup below.'};}
   const yearPath=new URL(yearUrl).pathname;
   const modelWords=words(specs.model);
   let options=links(yearHtml,yearUrl).filter(link=>{
@@ -72,8 +73,10 @@ export async function findManuals(record,{fetcher=fetch}={}) {
     return !match||Math.abs(Number(match[1])-Number(specs.displacement))<=0.15;
   });
   const drive=String(specs.drive||'');
-  if(/4x2|2WD/i.test(drive))options=options.filter(option=>!/\b4WD\b|\bAWD\b/i.test(option.label));
-  if(/4WD|4x4/i.test(drive))options=options.filter(option=>!/\b2WD\b/i.test(option.label));
+  if(/4x2|2WD|FWD|RWD|Front.Wheel|Rear.Wheel/i.test(drive))options=options.filter(option=>!/\b4WD\b|\bAWD\b/i.test(option.label));
+  if(/4WD|4x4|AWD/i.test(drive))options=options.filter(option=>!/\b(?:2WD|FWD|RWD)\b/i.test(option.label));
+  if(/FWD|Front.Wheel/i.test(drive))options=options.filter(option=>!/\bRWD\b/i.test(option.label));
+  if(/RWD|Rear.Wheel/i.test(drive))options=options.filter(option=>!/\bFWD\b/i.test(option.label));
   options=[...new Map(options.map(option=>[option.url,option])).values()];
   result.options=options;
   // A known engine size and cylinder count must support an automatic match.
@@ -95,5 +98,5 @@ export function manualResponse(result) {
   headers['Content-Type']='text/html; charset=utf-8';
   headers['Content-Security-Policy']="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'";
   const options=result.options.map(option=>'<li><a href="'+escape(option.url)+'" rel="noreferrer">'+escape(option.label)+'</a></li>').join('');
-  return new Response('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Vehicle repair manuals · Swagg Daddys</title><style>body{margin:32px auto;padding:0 20px;max-width:680px;background:#090e0b;color:#f0f5f1;font:18px/1.6 Arial}a{color:#47edbd}li{margin:18px 0}h1{line-height:1.2}p{overflow-wrap:anywhere}</style><h1>'+escape(result.vehicle)+'</h1><p>'+escape(result.message)+'</p><p>Decoded engine: '+escape([result.specs.cylinders&&result.specs.cylinders+' cylinders',result.specs.displacement&&Number(result.specs.displacement).toFixed(1)+' L',result.specs.engine,result.specs.drive].filter(Boolean).join(' · ')||'Not supplied')+'</p><ul>'+options+'</ul><p><a href="'+escape(result.browseUrl)+'" rel="noreferrer">Browse vehicle manuals on CHARM</a></p><p><a href="/owner/">Back to the owner inbox</a></p></html>',{headers});
+  return new Response('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Vehicle repair manuals · Swagg Daddys</title><style>body{margin:32px auto;padding:0 20px;max-width:680px;background:#090e0b;color:#f0f5f1;font:18px/1.6 Arial}a{color:#47edbd}li{margin:18px 0}h1{line-height:1.2}p{overflow-wrap:anywhere}</style><h1>'+escape(result.vehicle)+'</h1><p>'+escape(result.message)+'</p><p>Decoded engine: '+escape([result.specs.cylinders&&result.specs.cylinders+' cylinders',result.specs.displacement&&Number(result.specs.displacement).toFixed(1)+' L',result.specs.engine,result.specs.drive].filter(Boolean).join(' · ')||'Not supplied')+'</p><ul>'+options+'</ul><p><a href="'+escape(result.browseUrl)+'" rel="noreferrer">Browse vehicle manuals on LEMON</a></p><p><a href="'+BACKUP_ROOT+'" rel="noreferrer">Open CHARM backup manuals</a></p><p><a href="/owner/">Back to the owner inbox</a></p></html>',{headers});
 }

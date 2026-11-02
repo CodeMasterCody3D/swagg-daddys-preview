@@ -27,8 +27,8 @@ function requestVin(item) {
   const box=el('div',undefined,'vin-summary');box.append(el('strong','VIN'));
   const value=item.vin || item.vinSubmitted || '';
   if(value&&/^[A-HJ-NPR-Z0-9]{17}$/.test(item.vin || '')) {
-    const link=el('a',value,'vin-value');link.href=apiBase+'/requests/'+encodeURIComponent(item.id)+'/manuals';link.target='_blank';link.rel='noopener noreferrer';link.referrerPolicy='no-referrer';link.title='Find vehicle repair manuals on CHARM';
-    box.append(link,el('span','Tap VIN to find this vehicle’s CHARM manuals.','small muted'));
+    const link=el('a',value,'vin-value');link.href=apiBase+'/requests/'+encodeURIComponent(item.id)+'/manuals';link.target='_blank';link.rel='noopener noreferrer';link.referrerPolicy='no-referrer';link.title='Find vehicle repair manuals on LEMON';
+    box.append(link,el('span','Tap VIN to find this vehicle’s LEMON manuals.','small muted'));
   }else box.append(el('span',value || 'Not included in this saved request','vin-value'));
   if(item.vinSubmitted&&item.vinSubmitted!==item.vin&&item.vin)box.append(el('span','As entered: '+item.vinSubmitted,'small muted'));
   return box;
