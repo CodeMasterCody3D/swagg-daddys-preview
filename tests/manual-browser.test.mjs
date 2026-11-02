@@ -33,6 +33,28 @@ test('a dead address falls through to the next one, which is then tried first',a
   assert.equal(calls[0],hosts[1]+'/Toyota/');
 });
 
+test('a remembered address that goes down rolls on to the others, and instant failures do not wait',async()=>{
+  const three=['https://a.test','https://b.test','https://c.test'];
+  let down=new Set();const calls=[];
+  const fetcher=async url=>{calls.push(url);if([...down].some(h=>url.startsWith(h)))throw new TypeError('fetch failed');return new Response(page);};
+  const browser=createManualBrowser({fetcher,hosts:three,stagger:60000});
+  assert.equal((await browser.page('/Honda/')).host,three[0]);
+  down=new Set([three[0],three[1]]);calls.length=0;
+  const started=Date.now();const result=await browser.page('/Toyota/');
+  // A 60 s stagger would fail this if a dead address held up the next one.
+  assert.equal(result.host,three[2]);assert.ok(Date.now()-started<1000);
+  assert.deepEqual(calls.map(url=>new URL(url).origin),three);
+  down=new Set();calls.length=0;await browser.page('/Ford/');
+  assert.equal(new URL(calls[0]).origin,three[2]);
+});
+
+test('one copy missing a page does not hide it when another copy has it',async()=>{
+  const fetcher=async url=>url.startsWith(hosts[0])?new Response('no',{status:404}):new Response(page);
+  const browser=createManualBrowser({fetcher,hosts,stagger:60000});
+  const result=await browser.page('/Honda/2008/');
+  assert.equal(result.host,hosts[1]);
+});
+
 test('404 is reported as missing and every address failing is a clear 502',async()=>{
   const missing=createManualBrowser({fetcher:async()=>new Response('no',{status:404}),hosts,stagger:5});
   await assert.rejects(missing.page('/Nope/'),e=>e instanceof ManualError&&e.status===404);

@@ -60,30 +60,45 @@ async function limitedBytes(response,max) {
 
 export function createManualBrowser({fetcher=fetch,hosts=MANUAL_HOSTS,stagger=STAGGER_MS,timeout=TIMEOUT_MS}={}) {
   let lastGood=null;
-  // Ask one address; each `stagger` ms without an answer, also ask the next.
-  // The first real answer wins and the others are cancelled. A 404 is an answer.
-  async function first(path,max) {
+  // Roll through every address: start with the one that last answered, start the
+  // next as soon as the current one fails, or after `stagger` ms without an answer,
+  // so a slow address doesn't hold up the others. The first page wins and the rest
+  // are cancelled. "Not found" only counts once every address has answered or
+  // failed, because one copy can be missing a page another copy has.
+  function first(path,max) {
     const order=[lastGood,...hosts.filter(host=>host!==lastGood)].filter(Boolean);
     const stop=new AbortController();
-    const tries=order.map((host,index)=>new Promise((resolve,reject)=>{
-      setTimeout(async()=>{
-        if(stop.signal.aborted)return reject(Error('cancelled'));
-        try {
-          const response=await fetcher(host+path,{redirect:'error',signal:AbortSignal.any([stop.signal,AbortSignal.timeout(timeout)]),headers:{'User-Agent':'SwaggDaddysOwner/1.0'}});
-          if(response.status===404){await response.body?.cancel();return resolve({host,status:404});}
-          if(!response.ok){await response.body?.cancel();return reject(Error(host+' '+response.status));}
-          resolve({host,status:200,type:response.headers.get('content-type')||'',bytes:await limitedBytes(response,max)});
-        }catch(error){reject(error);}
-      },index*stagger);
-    }));
-    try {
-      const won=await Promise.any(tries);
-      stop.abort();lastGood=won.host;return won;
-    }catch(error){
-      const tooLarge=error.errors?.find(item=>item instanceof ManualError);
-      if(tooLarge)throw tooLarge;
-      throw new ManualError(502,'LEMON Manuals is not answering at any of its addresses right now. Try again in a few minutes.');
-    }
+    return new Promise((resolve,reject)=>{
+      let started=0,settled=0,done=false,timer,missing=false,tooLarge=null;
+      const finish=()=>{
+        if(done||settled<order.length)return;
+        done=true;clearTimeout(timer);
+        if(missing)return resolve({status:404});
+        reject(tooLarge||new ManualError(502,'LEMON Manuals is not answering at any of its addresses right now. Try again in a few minutes.'));
+      };
+      const next=()=>{
+        clearTimeout(timer);
+        if(done||started>=order.length)return;
+        const host=order[started++];
+        if(started<order.length)timer=setTimeout(next,stagger);
+        (async()=>{
+          try {
+            const response=await fetcher(host+path,{redirect:'error',signal:AbortSignal.any([stop.signal,AbortSignal.timeout(timeout)]),headers:{'User-Agent':'SwaggDaddysOwner/1.0'}});
+            if(response.status===404){await response.body?.cancel();missing=true;throw Error(host+' 404');}
+            if(!response.ok){await response.body?.cancel();throw Error(host+' '+response.status);}
+            const bytes=await limitedBytes(response,max);
+            if(done)return;
+            done=true;clearTimeout(timer);stop.abort();lastGood=host;
+            resolve({host,status:200,type:response.headers.get('content-type')||'',bytes});
+          }catch(error){
+            if(error instanceof ManualError)tooLarge=error;
+            settled++;
+            if(!done){next();finish();}
+          }
+        })();
+      };
+      next();
+    });
   }
   return {
     async page(path) {
