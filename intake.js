@@ -1,3 +1,4 @@
+import { requestServiceLocation } from './request-location.js';
 (async () => {
   const form = document.getElementById('service-form');
   const media = document.getElementById('media');
@@ -33,9 +34,12 @@
   if (booking) booking.querySelector('p').textContent = 'No. Your request is sent to the mechanic for review. An appointment is booked only after you confirm the date, location, work, and price together.';
   form.addEventListener('submit', async event => {
     event.preventDefault();
-    if (!form.reportValidity()) return;
+    if (submit.disabled || !form.reportValidity()) return;
     submit.disabled=true; media.disabled=true; showStatus('Preparing your request…');
     try {
+      showStatus('Waiting for location permission. You can decline and still send your request.');
+      await requestServiceLocation();
+      showStatus('Preparing your request…');
       const prepared=await (window.SWAGG_MEDIA_READY || Promise.resolve({files:[...media.files],warnings:[]}));
       const body=new FormData(form);body.delete('issue_media');for(const file of prepared.files)body.append('issue_media',file,file.name);
       showStatus('Sending your request…');

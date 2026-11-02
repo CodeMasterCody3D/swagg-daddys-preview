@@ -20,7 +20,7 @@ const lensReader = qa?.mockGoogleLens ? async () => {
   return lensVinResult({segments:[{text:fixture.lensScenario==='unreadable'?'UNREADABLE':'1HGCM82633A004352'}]});
 } : undefined;
 const api = createApi({ store, env, lensReader });
-const publicFiles = new Set(['/index.html','/site-config.js','/intake.js','/media.js','/vin.js','/vin-core.js','/vin-scan.js','/vin-lens.js','/vin-reader.js','/vin-barcode-scale.js','/privacy.html','/owner/index.html','/owner/owner.css','/owner/owner.js']);
+const publicFiles = new Set(['/index.html','/site-config.js','/intake.js','/request-location.js','/media.js','/vin.js','/vin-core.js','/vin-scan.js','/vin-lens.js','/vin-reader.js','/vin-barcode-scale.js','/privacy.html','/owner/index.html','/owner/owner.css','/owner/owner.js']);
 publicFiles.add('/owner/vehicle-research.js');
 publicFiles.add('/owner/app-updates.js');
 publicFiles.add('/owner/app-updates-core.js');
