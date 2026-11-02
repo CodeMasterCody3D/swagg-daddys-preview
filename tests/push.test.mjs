@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { createPushService, fcmSender, notificationPreview, isUrgent, REMINDER_MS } from '../server/push.mjs';
 import { localStore } from '../server/local-store.mjs';
+import { hashPassword } from '../server/auth.mjs';
 
-const env={OWNER_PASSWORD_HASH:'test-hash'};
+const env={OWNER_PASSWORD_HASH:await hashPassword('notification-test-password')};
 const device='12345678-1234-1234-1234-123456789012',token='test_token_for_notification_123456';
 test('delivery persists retry state across service instances and removes successful outbox entries',async()=>{
   const store=localStore();let fail=true;const sent=[];

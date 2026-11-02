@@ -7,7 +7,7 @@ import { createInvoices } from './invoices.mjs';
 import { drivingMiles, parsePoint } from './route.mjs';
 import { createVehicleResearch } from './vehicle-research.mjs';
 import { LensReadError, MAX_LENS_PHOTO_BYTES, readGoogleVinPhoto } from './lens.mjs';
-import { configured, cookieValue, digest, sessionCookie, SESSION_MS, token, verifyPassword } from './auth.mjs';
+import { configured, ownerAccount, ownerAccounts, cookieValue, digest, sessionCookie, SESSION_MS, token, verifyPassword } from './auth.mjs';
 
 export const MAX_MEDIA_BYTES = 4 * 1024 * 1024;
 const MAX_BODY_BYTES = MAX_MEDIA_BYTES + 65536;
@@ -76,10 +76,11 @@ export function createApi({ store, invoices = null, routeMiles = drivingMiles, e
     const key = 'sessions/' + digest(raw);
     const entry = await store.get(key);
     if (!entry) fail(401, 'Please sign in.');
-    if (entry.value.expires <= now() || entry.value.authVersion !== digest(env.OWNER_PASSWORD_HASH)) {
+    const account = ownerAccount(env, entry.value.username ?? (env.OWNER_USERNAME || 'owner'));
+    if (!account || entry.value.expires <= now() || entry.value.authVersion !== digest(account.passwordHash)) {
       await store.remove(key); fail(401, 'Your session has expired. Please sign in again.');
     }
-    return { ...entry.value, key };
+    return { ...entry.value, username: account.username, key };
   }
   function sameOrigin(request) {
     if (request.headers.get('origin') !== new URL(request.url).origin) fail(403, 'Please open the owner dashboard on its secure host.');
@@ -153,14 +154,16 @@ export function createApi({ store, invoices = null, routeMiles = drivingMiles, e
         const username = text(body?.username, 100);
         const password = body?.password;
         if (typeof password !== 'string' || !password || password.length > 256) fail(400, 'Enter your password.');
-        const correct = await verifyPassword(password, env.OWNER_PASSWORD_HASH);
-        if (!correct || username !== (env.OWNER_USERNAME || 'owner')) fail(401, 'Username or password is incorrect.');
+        const account = ownerAccount(env, username);
+        // Unknown usernames still perform a password derivation before failing.
+        const correct = await verifyPassword(password, (account || ownerAccounts(env)[0]).passwordHash);
+        if (!account || !correct) fail(401, 'Username or password is incorrect.');
         const raw = token(); const csrf = token();
         // Re-login replaces the session in this browser instead of leaving it usable.
         const previous = cookieValue(request);
         if (/^[a-f0-9]{64}$/.test(previous)) await store.remove('sessions/' + digest(previous));
-        await store.put('sessions/' + digest(raw), { csrf, expires: now() + SESSION_MS, authVersion: digest(env.OWNER_PASSWORD_HASH) });
-        return json({ csrf, username }, 200, { 'Set-Cookie': sessionCookie(raw) });
+        await store.put('sessions/' + digest(raw), { csrf, username: account.username, expires: now() + SESSION_MS, authVersion: digest(account.passwordHash) });
+        return json({ csrf, username: account.username }, 200, { 'Set-Cookie': sessionCookie(raw) });
       }
 
       if (publicIntake && request.method === 'POST') {
@@ -222,7 +225,7 @@ export function createApi({ store, invoices = null, routeMiles = drivingMiles, e
       }
 
       const auth = await session(request);
-      if (route === '/session' && request.method === 'GET') return json({ username: env.OWNER_USERNAME || 'owner', csrf: auth.csrf, notificationsReady: notifications.ready, notificationConfig: clientNotificationConfig(env) });
+      if (route === '/session' && request.method === 'GET') return json({ username: auth.username, csrf: auth.csrf, notificationsReady: notifications.ready, notificationConfig: clientNotificationConfig(env) });
       const researchMatch=route.match(/^\/vehicles\/([A-HJ-NPR-Z0-9]{17})\/research$/);
       const researchDetail=route.match(/^\/research\/(safety|economy)\/(\d{1,8})$/);
       if((researchMatch||researchDetail)&&request.method==='GET') {

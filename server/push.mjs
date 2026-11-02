@@ -1,5 +1,5 @@
 import { sign, randomUUID } from 'node:crypto';
-import { digest } from './auth.mjs';
+import { digest, ownerAccount } from './auth.mjs';
 
 const DAY = 86400000;
 const MINUTE = 60000;
@@ -83,14 +83,20 @@ export function fcmSender(env, fetcher = fetch, now = Date.now) {
 }
 
 export function createPushService({ store, env, now = Date.now, sender = fcmSender(env) }) {
-  const authVersion = () => digest(env.OWNER_PASSWORD_HASH);
+  const authVersion = username => {
+    const account = ownerAccount(env, username ?? (env.OWNER_USERNAME || 'owner'));
+    return account ? digest(account.passwordHash) : null;
+  };
   async function register(id, token, auth) {
     if (!validDeviceId(id) || !tokenValid(token)) throw new Error('Invalid notification device');
+    const username = auth.username ?? (env.OWNER_USERNAME || 'owner');
+    const version = authVersion(username);
+    if (!version || (auth.authVersion && auth.authVersion !== version)) throw new Error('Please sign in again to enable notifications');
     const key='push-devices/'+id;
     for(let attempt=0;attempt<3;attempt++) {
       const old=await store.get(key);
       if (!old && (await store.keys('push-devices/')).length>=10) throw new Error('Remove an old notification device before adding another');
-      if(await store.put(key,{ token, sessionKey:auth.key, authVersion:authVersion(), expires:now()+90*DAY },old?.etag))return;
+      if(await store.put(key,{ token, username, sessionKey:auth.key, authVersion:version, expires:now()+90*DAY },old?.etag))return;
     }
     throw new Error('Please retry notification setup');
   }
@@ -111,7 +117,8 @@ export function createPushService({ store, env, now = Date.now, sender = fcmSend
       await Promise.all(event.value.devices.map(async deviceKey=>{
         const entry=await store.get(deviceKey);if(!entry)return;
         const device=entry.value;
-        if(device.expires<=now() || device.authVersion!==authVersion()){await store.remove(deviceKey);return;}
+        const version = authVersion(device.username);
+        if(!version || device.expires<=now() || device.authVersion!==version){await store.remove(deviceKey);return;}
         try { if(await sender.send(device.token,event.value.id,event.value.preview,{priority:event.value.priority,reminder:event.value.reminder})==='unregistered')await store.remove(deviceKey); }
         catch { pending.push(deviceKey); }
       }));
