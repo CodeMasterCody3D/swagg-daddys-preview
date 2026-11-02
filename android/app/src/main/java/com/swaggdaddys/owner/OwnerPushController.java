@@ -97,7 +97,9 @@ final class OwnerPushController {
             activity.requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},PERMISSION);
         } else if(!OwnerAlerts.allowed(activity)) {
             message("Allow notifications in phone settings to hear the test.");phoneSettings();
-        } else OwnerAlerts.test(activity);
+        } else new AlertDialog.Builder(activity).setTitle("Test sound")
+                .setItems(new CharSequence[]{"Normal request — one ding","Stranded / urgent — three rings"},
+                        (d,which)->{if(which==0)OwnerAlerts.test(activity);else OwnerAlerts.testUrgent(activity);}).show();
     }
     private void explain() {
         preferences.edit().putBoolean("asked",true).apply();

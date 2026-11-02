@@ -1,6 +1,7 @@
 import { photoCanvas } from './vin-scan.js';
 import { readVinPhoto } from './vin-reader.js';
 import { createLiveVinScanner, cameraErrorMessage } from './vin-live.js';
+import { createCameraControls } from './vin-camera.js';
 import { normalizeVin, validVin, decodedVehicle } from './vin-core.js';
 
 const $ = id => document.getElementById(id);
@@ -22,8 +23,10 @@ function showBarcodeCheck(check) {
 }
 let timer, revision = 0, abort, scanBusy = false;
 let liveScanner;
+// Pinch/zoom button, flashlight and guide-box region for the live camera.
+const cameraControls=createCameraControls({root:$('vin-live-tools'),video:$('vin-live-video'),guide:document.querySelector('.vin-live-guide'),zoomButton:$('vin-live-zoom'),torchButton:$('vin-live-torch'),onMessage:message=>{$('vin-live-status').textContent=message;}});
 function liveUi(open){
-  const panel=$('vin-live-tools');panel.hidden=!open;
+  const panel=$('vin-live-tools');panel.hidden=!open;cameraControls.lockPage(open);if(!open)cameraControls.detach();
   document.documentElement.classList.toggle('vin-scanner-open',open);
   if(open&&!panel.open)panel.showModal();else if(!open&&panel.open)panel.close();
   $('vin-photo-button').setAttribute('aria-expanded',String(open));$('vin-photo-button').disabled=open&&Boolean(liveScanner?.active);$('vin-live-capture').disabled=!liveScanner?.active;
@@ -144,7 +147,7 @@ async function selectPhoto(event) {
   } catch(error){status.textContent=error.message;}
   finally {scanBusy=false;for(const id of ['vin-photo-button','vin-upload-button','vin-retry','vin-clear-photo'])$(id).disabled=false;}
 }
-liveScanner=createLiveVinScanner({video:$('vin-live-video'),onSample:info=>{$('vin-live-progress').textContent='Camera: '+info.width+' × '+info.height+' · Frames sampled: '+info.samples+' · Barcode attempts: '+info.attempts+' · Local text checks: '+info.textAttempts;},onFrame:(result,{frames,samples,textAttempts})=>{if(result.diagnostics)showBarcodeCheck({...result.diagnostics,liveFrames:frames});$('vin-live-progress').textContent='Frames sampled: '+samples+' · Barcode attempts: '+frames+' · Local text checks: '+textAttempts;},onStatus:message=>{if($('vin-live-status').textContent!==message)$('vin-live-status').textContent=message;},onMatch:(vin,result)=>{liveUi(false);showBarcodeCheck({...result.diagnostics,liveFrames:barcodeCheck?.liveFrames});applyScannedVin(vin,result.candidates?.[0]?.method==='text'?'live-text':'live-barcode');},onError:error=>{liveUi(true);$('vin-photo-button').disabled=false;$('vin-live-capture').disabled=true;$('vin-live-status').textContent=cameraErrorMessage(error);}});
+liveScanner=createLiveVinScanner({video:$('vin-live-video'),onStarted:stream=>cameraControls.attach(stream),region:()=>cameraControls.region(),onSample:info=>{$('vin-live-progress').textContent='Camera: '+info.width+' × '+info.height+' · Frames sampled: '+info.samples+' · Barcode attempts: '+info.attempts+' · Local text checks: '+info.textAttempts;},onFrame:(result,{frames,samples,textAttempts})=>{if(result.diagnostics)showBarcodeCheck({...result.diagnostics,liveFrames:frames});$('vin-live-progress').textContent='Frames sampled: '+samples+' · Barcode attempts: '+frames+' · Local text checks: '+textAttempts;},onStatus:message=>{if($('vin-live-status').textContent!==message)$('vin-live-status').textContent=message;},onMatch:(vin,result)=>{liveUi(false);showBarcodeCheck({...result.diagnostics,liveFrames:barcodeCheck?.liveFrames});applyScannedVin(vin,result.candidates?.[0]?.method==='text'?'live-text':'live-barcode');},onError:error=>{liveUi(true);$('vin-photo-button').disabled=false;$('vin-live-capture').disabled=true;$('vin-live-status').textContent=cameraErrorMessage(error);}});
 $('vin-photo-button').addEventListener('click',async()=>{
   if(scanBusy)return;
   clearPhoto();scanSource.textContent='';showBarcodeCheck();$('vin-live-progress').textContent='Waiting for camera frames. Barcode first; local text checks start if needed.';liveUi(true);

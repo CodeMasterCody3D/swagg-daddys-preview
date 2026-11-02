@@ -25,7 +25,10 @@ publicFiles.add('/owner/vehicle-research.js');
 publicFiles.add('/owner/app-updates.js');
 publicFiles.add('/owner/app-updates-core.js');
 publicFiles.add('/vin-live.js');
-const types = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.webp':'image/webp', '.wasm':'application/wasm', '.gz':'application/gzip', '.txt':'text/plain' };
+publicFiles.add('/vin-camera.js');
+publicFiles.add('/owner/manuals.js');
+publicFiles.add('/owner/manuals.css');
+const types = { '.json':'application/json', '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.webp':'image/webp', '.wasm':'application/wasm', '.gz':'application/gzip', '.txt':'text/plain' };
 const root = resolve('.');
 const server = createServer(async (req,res) => {
   try {
@@ -57,7 +60,8 @@ const server = createServer(async (req,res) => {
     }
     const path = url.pathname.endsWith('/') ? url.pathname + 'index.html' : url.pathname;
     const vendor=/^\/vendor\/(?:tesseract|zxing)\/[a-zA-Z0-9./_-]+$/.test(path) && !path.includes('..');
-    if (!vendor && !publicFiles.has(path) && !/^\/assets\/[a-z0-9-]+\.webp$/.test(path)) { res.writeHead(404); res.end('Not found'); return; }
+    const manualData=/^\/manuals-data\/(?:makes|v\/[A-Za-z0-9-]+\/\d{4})\.json$/.test(path);
+    if (!vendor && !manualData && !publicFiles.has(path) && !/^\/assets\/[a-z0-9-]+\.webp$/.test(path)) { res.writeHead(404); res.end('Not found'); return; }
     const filename = resolve(root, vendor ? 'public'+path : '.'+path);
     if (!filename.startsWith(root+sep)) { res.writeHead(403); res.end(); return; }
     let data = await readFile(filename);

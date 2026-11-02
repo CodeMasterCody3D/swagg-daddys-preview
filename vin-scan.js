@@ -93,12 +93,28 @@ export async function scanVinBarcodes(source,{rectangle=null,progress=()=>{}}={}
   return {candidates:[...candidates.values()],rawText:[...new Set(raw)].join('\n'),warnings,diagnostics};
 }
 
-export async function scanVinLiveFrame(source,{enhance=false}={}) {
+const LIVE_OPTIONS={formats:['Code39','Code128','Code93','PDF417','DataMatrix','QRCode'],tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:8};
+// `region` is the on-screen guide box as fractions of the frame. It is read first,
+// at native pixels: on a 1920x1080 frame this was 2-3x faster than the whole frame
+// and found a small barcode the whole-frame read missed (the engine downsizes large
+// images). A miss continues with the whole frame and then the enhanced passes.
+export async function scanVinLiveFrame(source,{enhance=false,region=null}={}) {
   const engine=await barcodeEngine();
-  const symbols=await engine.readBarcodes(source.getContext('2d',{willReadFrequently:true}).getImageData(0,0,source.width,source.height),{formats:['Code39','Code128','Code93','PDF417','DataMatrix','QRCode'],tryHarder:true,tryRotate:true,tryInvert:true,maxNumberOfSymbols:8});
-  const candidates=new Map();for(const symbol of symbols)for(const candidate of scannedVins(symbol.text,{barcode:true}))candidates.set(candidate.vin,{...candidate,method:'barcode'});
+  const context=source.getContext('2d',{willReadFrequently:true}),passes=[],symbols=[];
+  const candidates=new Map();
+  const collect=found=>{for(const symbol of found){symbols.push(symbol);for(const candidate of scannedVins(symbol.text,{barcode:true}))candidates.set(candidate.vin,{...candidate,method:'barcode'});}};
+  const box=guideBox(source,region);
+  if(box){passes.push('Guide box');collect(await engine.readBarcodes(context.getImageData(box.x,box.y,box.width,box.height),LIVE_OPTIONS));}
+  if(!candidates.size){passes.push('Live camera frame');collect(await engine.readBarcodes(context.getImageData(0,0,source.width,source.height),LIVE_OPTIONS));}
   if(!candidates.size&&enhance)return scanVinBarcodes(source);
-  return {candidates:[...candidates.values()],warnings:[],diagnostics:{version:'live-1',width:source.width,height:source.height,passes:['Live camera frame'],symbols:symbols.map(s=>({format:s.format,text:s.text.slice(0,160)})),status:candidates.size?'read':'no-vin'}};
+  return {candidates:[...candidates.values()],warnings:[],diagnostics:{version:'live-2',width:source.width,height:source.height,passes,symbols:symbols.map(s=>({format:s.format,text:s.text.slice(0,160)})),status:candidates.size?'read':'no-vin'}};
+}
+// Guide fractions -> whole-pixel rectangle inside the frame, or null if unusable.
+export function guideBox(source,region) {
+  if(!region||![region.x,region.y,region.width,region.height].every(Number.isFinite))return null;
+  const x=Math.max(0,Math.floor(region.x*source.width)),y=Math.max(0,Math.floor(region.y*source.height));
+  const width=Math.min(source.width-x,Math.ceil(region.width*source.width)),height=Math.min(source.height-y,Math.ceil(region.height*source.height));
+  return width>=40&&height>=20&&width*height<source.width*source.height*.9?{x,y,width,height}:null;
 }
 
 // Live text is a local fallback, never a Google request. Reuse one worker for

@@ -8,6 +8,7 @@
   <title>Owner inbox · Swagg Daddys</title>
   <link rel="icon" href="../assets/swagg-daddys-logo-transparent.webp">
   <link rel="stylesheet" href="owner.css">
+  <link rel="stylesheet" href="manuals.css">
   <script src="../site-config.js" defer></script>
   <script src="owner.js" type="module"></script>
 </head>
@@ -38,14 +39,14 @@
     <section id="inbox" hidden>
       <nav class="owner-tabs" aria-label="Owner sections"><button id="requests-tab" type="button" class="button compact" aria-pressed="true" aria-controls="requests-view">Requests</button><button id="tools-tab" type="button" class="button secondary compact" aria-pressed="false" aria-controls="owner-tools">Tools</button></nav>
       <section id="owner-tools" class="panel" aria-labelledby="owner-tools-title" hidden>
-        <h2 id="owner-tools-title">Tools</h2>
-        <p class="muted">Repair references for your next job.</p>
-        <h3>LEMON Manuals</h3>
-        <p>Free repair manuals for vehicles through 2025, including the CHARM collection. Choose the make, year, and model to find available service information.</p>
-        <a class="button secondary" href="https://lemon-manuals.la/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open LEMON manuals ↗</a>
-        <p class="small muted"><a href="https://charm.li/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open CHARM backup ↗</a></p>
-        <p class="small muted">Opens an external website. Customer details are not included in this link.</p>
-        <details class="job-tools"><summary>Vehicle research · VIN, recalls, ratings and history checks</summary><div id="vehicle-research"></div></details>
+        <p class="eyebrow">TOOLS</p>
+        <h2 id="owner-tools-title">Repair manuals</h2>
+        <p class="muted">Type the year, make and model, or a VIN. Then search the manual for the job.</p>
+        <div id="manual-finder"></div>
+        <details class="job-tools">
+          <summary>Vehicle research · VIN, recalls, ratings and history checks</summary>
+          <div id="vehicle-research"></div>
+        </details>
       </section>
       <section id="requests-view" aria-label="Service requests">
       <div class="toolbar"><h2><span id="inbox-title">Service requests</span> <span id="count" class="count"></span></h2><div class="toolbar-actions"><button class="button secondary compact" id="refresh">Refresh</button><button class="button secondary compact" id="sign-out">Sign out</button></div></div>

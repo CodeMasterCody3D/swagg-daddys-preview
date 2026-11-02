@@ -28,7 +28,7 @@ export function scoreVinFrame(frame) {
 
 // One local decode at a time. Stop invalidates pending permission/play/decode work,
 // so a late camera grant or barcode result cannot reopen the camera or overwrite a VIN.
-export function createLiveVinScanner({video,getMedia=constraints=>navigator.mediaDevices.getUserMedia(constraints),prepare=prepareVinBarcodeReader,readFrame=scanVinLiveFrame,makeTextReader=createLiveVinTextReader,textAfterMisses=3,capture=captureVinFrame,score=scoreVinFrame,samplesPerRead=3,sampleIntervalMs=100,schedule=setTimeout,cancel=clearTimeout,onStatus=()=>{},onMatch=()=>{},onError=()=>{},onFrame=()=>{},onSample=()=>{}}) {
+export function createLiveVinScanner({video,getMedia=constraints=>navigator.mediaDevices.getUserMedia(constraints),prepare=prepareVinBarcodeReader,readFrame=scanVinLiveFrame,makeTextReader=createLiveVinTextReader,textAfterMisses=3,capture=captureVinFrame,score=scoreVinFrame,samplesPerRead=3,sampleIntervalMs=100,schedule=setTimeout,cancel=clearTimeout,onStatus=()=>{},onMatch=()=>{},onError=()=>{},onFrame=()=>{},onSample=()=>{},onStarted=()=>{},region=()=>null}) {
   let generation=0,stream=null,task=null,running=false,lastVin='',hits=0,frames=0,samples=0,totalSamples=0,best=null,bestScore=-1,idle=0,misses=0,textReader=null,textAttempts=0,textUnavailable=false,lastVideoTime=null;
   const release=value=>{for(const track of value?.getTracks()||[])track.stop();};
   function closeText(){const previous=textReader;textReader=null;try{Promise.resolve(previous?.close()).catch(()=>{});}catch{}}
@@ -44,6 +44,7 @@ export function createLiveVinScanner({video,getMedia=constraints=>navigator.medi
       stream=acquired;for(const track of stream.getTracks())track.addEventListener?.('ended',()=>{if(run===generation&&running){stop();onError(Error('The camera stopped. Tap Live scan VIN to try again.'));}},{once:true});
       video.srcObject=stream;await video.play();
       if(!running||run!==generation)return;
+      onStarted(stream);
       onStatus('Aim at the whole VIN barcode and hold steady. Scanning automatically…');
       async function tick(){
         task=null;if(!running||run!==generation)return;
@@ -59,7 +60,7 @@ export function createLiveVinScanner({video,getMedia=constraints=>navigator.medi
             const needed=frames===0||lastVin?1:samplesPerRead;
             if(samples<needed){task=schedule(tick,sampleIntervalMs);return;}
             const selected=best,selectedScore=bestScore;best=null;bestScore=-1;samples=0;frames++;
-            const enhance=true;let result=await readFrame(selected,{enhance});
+            const enhance=true;let result=await readFrame(selected,{enhance,region:region()});
             if(!running||run!==generation)return;
             if(result.diagnostics?.status==='unavailable')throw Error('The barcode reader could not start. Choose a VIN photo or enter the VIN.');
             if(result.candidates?.length)misses=0;
@@ -90,5 +91,5 @@ export function createLiveVinScanner({video,getMedia=constraints=>navigator.medi
       task=schedule(tick,0);
     }catch(error){if(run===generation){stop();onError(error);}}
   }
-  return {start,stop,get active(){return running;},capture:()=>capture(video)};
+  return {start,stop,get active(){return running;},get stream(){return stream;},capture:()=>capture(video)};
 }

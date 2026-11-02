@@ -6,7 +6,7 @@ The customer site keeps its logo, card artwork, large Call Now button, Text Me l
 
 ## Owner inbox
 
-- VINs now appear prominently on request cards and at the top of request details, including the original entered value when different. A clickable VIN opens an owner-authenticated resolver for CHARM manuals using year, make, model, cylinder count, displacement and drive. The VIN is decoded independently through NHTSA when the manual link is opened, including for older requests without saved specifications. The VIN and customer information are not sent to CHARM. An exact engine match opens its listed manual; ambiguous matches offer choices, and unavailable manuals show an explicit browse fallback. This does not connect registration, owner databases, or CARFAX records.
+- VINs now appear prominently on request cards and at the top of request details, including the original entered value when different. A clickable VIN opens the Tools repair-manual finder at that vehicle (see Owner repair manuals). The older owner-authenticated resolver at `/api/requests/<id>/manuals` remains for CHARM manuals using year, make, model, cylinder count, displacement and drive. The VIN is decoded independently through NHTSA when the manual link is opened, including for older requests without saved specifications. The VIN and customer information are not sent to CHARM. An exact engine match opens its listed manual; ambiguous matches offer choices, and unavailable manuals show an explicit browse fallback. This does not connect registration, owner databases, or CARFAX records.
 - Each request has tool-planning guidance with a suggested basic kit, relevant oil/brake/transmission prompts, and the vehicle-specific manual link. These suggestions are not a verified job tool inventory; exact sizes and manufacturer tools must be confirmed in the selected repair procedure. Registration, CARFAX integration, and an embedded AI chat are not implemented.
 
 - Password login with no public signup. Verification runs on the server using scrypt or PBKDF2-SHA256.
@@ -20,6 +20,19 @@ The customer site keeps its logo, card artwork, large Call Now button, Text Me l
 
 - In-page AI chat on both the customer form and private owner dashboard. The requested integration must stay inside the page, use no paid AI API, and support manual conversation; automatic hints/autofill are optional. It is not implemented. Duck.ai currently sends `X-Frame-Options: SAMEORIGIN` and a CSP `frame-ancestors` restricted to DuckDuckGo domains, so an ordinary embed on this domain is blocked. A supported embedded provider or local model remains to be selected; do not represent an external chat link as this feature.
 - Background Android request alerts still require Firebase configuration and an end-to-end phone test. The native notification code and a standalone phone sound test are included in the owner app update described below.
+
+## Repeat alerts until a request is opened
+
+Every new request keeps alerting the owner until he opens it in the owner app (or changes its status, or moves it to Trash):
+
+| Customer chose | Each alert | Repeats |
+| --- | --- | --- |
+| **Stranded — I can’t drive it / stuck on the road** or **Urgent — need help today** (older "Urgent — vehicle is stranded" too) | Three rings and a triple vibration ("URGENT ·" in the title) | every 15 minutes |
+| Soon, Flexible, or none | Normal single ding | every hour |
+
+Repeats are titled "Still waiting ·". The scheduled function (every 5 minutes) sends due reminders, so a repeat can arrive up to 5 minutes after its 15- or 60-minute mark. Reminders stop after 7 days. Reminder state is kept in `push-reminders/<request id>`, separate from the request record so owner edits never conflict with it. Opening a request calls `POST /api/requests/<id>/seen` (owner session + CSRF).
+
+On the phone, urgent alerts use their own Android channel, "Stranded and urgent requests", with a bundled three-ring sound (`res/raw/urgent_triple.ogg`, 2.1 s). Android fixes a channel's sound when it is created, which is why it is a second channel; if the owner turns that channel off, urgent alerts fall back to the normal one. Notifications → Test sound now offers "Normal request — one ding" and "Stranded / urgent — three rings". Owner app 1.0.6.
 
 ## Android owner alerts
 
@@ -103,6 +116,12 @@ A supplied Honda door-label image reproduced a barcode miss: default bilinear en
 
 The enhanced pass now uses an explicit cubic pixel resampler, rather than the browser-dependent canvas quality hint. Direct tests of both supplied low-resolution copies and the higher-resolution working image recover their VINs. The image files are not included in the repository. Barcode check details retain image dimensions, completed passes, barcode payloads, and any engine-start failure so a Google fallback is distinguishable from a missed barcode.
 
+### Full-screen camera controls, flashlight and guide-box reading
+
+The live scanner is a full-screen camera with every control on top of the picture, so nothing needs scrolling in portrait or landscape: Close, **Light** (steady flashlight) and **Zoom** at the top; **Take photo** and **Phone camera** at the bottom (a right-hand column when the phone is sideways). Pinching the picture zooms the camera, not the page: the scanner sets `touch-action: none`, blocks iOS gesture zoom, and caps page zoom at 1 while open (restored on close). Zoom uses the camera's own zoom where the browser offers it (Chrome on Android) and otherwise scales the preview. The Zoom button steps 1×/2×/3×. The flashlight button appears only when the camera reports torch support; iPhone browsers currently do not, so it stays hidden there. Continuous autofocus is requested when available. Logic lives in `vin-camera.js`.
+
+Each live read now starts with the band across the screen at the guide box, at native camera pixels, then the whole frame, then the existing enhanced passes. In Node with the bundled ZXing engine on a 1920×1080 frame, the guide area read in 20–55 ms versus 49–185 ms for the whole frame, and it found a 760 px-wide barcode the whole-frame read missed. In browser replay (synthetic portrait 1080×1920 camera stream, Code 39 VIN label, three runs each), time from the barcode appearing to the VIN filling: before 1,566 / 2,147 / 1,851 ms, after 563 / 587 / 602 ms. Desktop replay is not a phone measurement; camera focus, torch and zoom still need a physical-device check.
+
 ## Owner vehicle research
 
 Requests and Tools are separate owner sections. The existing Requests search still filters saved tickets by name, phone, vehicle and VIN. Tools offers an independent VIN lookup and the existing CHARM repair manuals. Opening a saved request with a valid VIN automatically loads public vehicle research and the first page of that VIN’s Swagg Daddys service history. Customer descriptions remain above the report. Both research endpoints and saved history require an owner session.
@@ -114,6 +133,17 @@ External checks: NICB VINCheck (theft/salvage, manual provider check with its li
 The requested OSINTCabal/VIN-Number-OSINT wrapper and idlesign/vininfo library were reviewed: their decoding and checksum roles are covered by the direct government integration and local checksum calculation, without an additional Python runtime. BelNaruto/free-vin-decoder could not be verified at the supplied repository URL. wanerllubbse/carfax-com-scraper contains a promotional README, not an executable scraper, so it is not installed or presented as a data feed. The free endpoints do not provide previous owners’ identities or a comprehensive accident history.
 
 Validation: 55 automated tests pass, including authenticated-only research, partial provider failures, configuration selection, VIN checksums and all existing scanner/intake tests. Direct live-provider checks on the supplied 2018 Honda VIN returned specs, recalls, complaints, an NCAP configuration and EPA options.
+
+## Owner repair manuals
+
+Tools opens with a repair-manual finder for LEMON Manuals (lemon-manuals.la, which includes every CHARM manual). Type a year, make and model the way you would say it (`2008 honda civic`, `f150 2015`, `chevy silverado 04`) or a 17-character VIN, then pick the model and engine and search that manual for the job (`brake pads`, `thermostat`, `P0420`). Topic buttons cover trouble codes, wiring, torque, fluids, brakes, spark plugs, timing, bulletins, recalls, battery, maintenance and A/C. A saved request's VIN and its "Open this vehicle's repair manual" button open the finder at that vehicle: the decoded engine size is highlighted, or the typed vehicle text is used when the request has no decoded VIN.
+
+- Make, year and model lists come from `manuals-data/` (69 makes, 2,439 small JSON files, 304,923 vehicles), built from the LEMON torrent's two `index.json` files by `node scripts/manuals-index.mjs <torrent>/lemon-manuals manuals-data`. Only those two files (about 150 MB) are needed, not the 1.1 TB archive. The script confirms that every vehicle's LEMON path is `/<make>/<year>/<model engine>/` before writing anything. These steps work while LEMON is down.
+- Manual pages, their search index and images are read through owner-authenticated `GET /api/manuals/page`, `/api/manuals/image` and `/api/manuals/vin/<VIN>` (server/manual-browser.mjs), because the owner CSP allows only same-origin requests and images. Only LEMON directory and `/images/` paths are accepted; `/bundle/` downloads stay links. Images must be PNG, JPEG, GIF or WebP by their bytes; SVG is refused. Customer details are never sent to LEMON; only the VIN goes to NHTSA.
+- LEMON was unreachable at all three official addresses on November 2, 2026. The server asks lemon-manuals.la, .org.ua, .gy and then the unaffiliated mirror lemon.dogeware.me listed on LEMON's About page, rolling through all four every time: it starts with the address that last worked, moves to the next immediately when one fails or after 2.5 seconds without an answer, and treats a page as missing only when every address says so. Measured live: the first request took 7.9 s while three official addresses hung, then 0.3 s from the mirror. Remove the mirror from `MANUAL_HOSTS` to stop using it.
+- Manual content is shown inside the dashboard after a tag/attribute whitelist inside an inert DOMParser document; links between manual pages stay in the app. The location hash mirrors LEMON paths (`#manuals/Honda/2008/Civic%20L4-1.8L/`), so the Android Back button steps back through the manual.
+
+Validation: 100 automated tests and the static build pass, including path validation, dead-address fallback, 404 vs. outage, image type checks, and owner-only access with no LEMON request before sign-in. Browser checks on the local dev server behind the production owner CSP: no CSP violations; a request's button opened 2015 Ford F-150 models; "spark plug" matched 8 of 14,875 pages and opened the procedure inline; Brake Pad Specifications showed both images (768 and 640 px) through the image route; VIN `1HGCM82633A004352` highlighted the 3.0L Accord rows; 375 px layout has no horizontal scroll. Not yet checked on the deployed Netlify site or the physical Android app.
 
 ## In-page live VIN camera
 
