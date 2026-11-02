@@ -1,5 +1,6 @@
 import { photoCanvas } from './vin-scan.js';
 import { readVinPhoto } from './vin-reader.js';
+import { scanWithGoogle } from './vin-lens.js';
 import { createLiveVinScanner, cameraErrorMessage } from './vin-live.js';
 import { createCameraControls } from './vin-camera.js';
 import { normalizeVin, validVin, decodedVehicle } from './vin-core.js';
@@ -38,10 +39,10 @@ if(location.hostname.endsWith('github.io')) {
 }
 const lensReady=fetch(lensApi+'/health',{credentials:'omit',cache:'no-store',signal:AbortSignal.timeout(5000)}).then(response=>response.ok?response.json():{}).then(health=>{
   const available=health.googleLens===true;
-  if(!available)$('vin-reader-note').textContent='VIN barcodes and printed text are read on your device. Google Lens is unavailable right now.';
+  if(!available)$('vin-reader-note').textContent='Google Lens is unavailable right now; the barcode and printed-text readers still work.';
   return available;
 }).catch(()=>{
-  $('vin-reader-note').textContent='VIN barcodes and printed text are read on your device. Google Lens is unavailable right now.';
+  $('vin-reader-note').textContent='Google Lens is unavailable right now; the barcode and printed-text readers still work.';
   return false;
 });
 function restoreVinStatus(){ $('vin-photo-tools').before(status); }
@@ -147,7 +148,7 @@ async function selectPhoto(event) {
   } catch(error){status.textContent=error.message;}
   finally {scanBusy=false;for(const id of ['vin-photo-button','vin-upload-button','vin-retry','vin-clear-photo'])$(id).disabled=false;}
 }
-liveScanner=createLiveVinScanner({video:$('vin-live-video'),onStarted:stream=>cameraControls.attach(stream),region:()=>cameraControls.region(),onSample:info=>{$('vin-live-progress').textContent='Camera: '+info.width+' × '+info.height+' · Frames sampled: '+info.samples+' · Barcode attempts: '+info.attempts+' · Local text checks: '+info.textAttempts;},onFrame:(result,{frames,samples,textAttempts})=>{if(result.diagnostics)showBarcodeCheck({...result.diagnostics,liveFrames:frames});$('vin-live-progress').textContent='Frames sampled: '+samples+' · Barcode attempts: '+frames+' · Local text checks: '+textAttempts;},onStatus:message=>{if($('vin-live-status').textContent!==message)$('vin-live-status').textContent=message;},onMatch:(vin,result)=>{liveUi(false);showBarcodeCheck({...result.diagnostics,liveFrames:barcodeCheck?.liveFrames});applyScannedVin(vin,result.candidates?.[0]?.method==='text'?'live-text':'live-barcode');},onError:error=>{liveUi(true);$('vin-photo-button').disabled=false;$('vin-live-capture').disabled=true;$('vin-live-status').textContent=cameraErrorMessage(error);}});
+liveScanner=createLiveVinScanner({video:$('vin-live-video'),lens:frame=>lensReady.then(ok=>ok?scanWithGoogle(frame,{api:lensApi}):null),onStarted:stream=>cameraControls.attach(stream),region:()=>cameraControls.region(),onSample:info=>{$('vin-live-progress').textContent='Camera: '+info.width+' × '+info.height+' · Frames sampled: '+info.samples+' · Barcode attempts: '+info.attempts+' · Local text checks: '+info.textAttempts;},onFrame:(result,{frames,samples,textAttempts})=>{if(result.diagnostics)showBarcodeCheck({...result.diagnostics,liveFrames:frames});$('vin-live-progress').textContent='Frames sampled: '+samples+' · Barcode attempts: '+frames+' · Local text checks: '+textAttempts;},onStatus:message=>{if($('vin-live-status').textContent!==message)$('vin-live-status').textContent=message;},onMatch:(vin,result)=>{liveUi(false);showBarcodeCheck({...result.diagnostics,liveFrames:barcodeCheck?.liveFrames});applyScannedVin(vin,{text:'live-text',lens:'google-lens'}[result.candidates?.[0]?.method]||'live-barcode');},onError:error=>{liveUi(true);$('vin-photo-button').disabled=false;$('vin-live-capture').disabled=true;$('vin-live-status').textContent=cameraErrorMessage(error);}});
 $('vin-photo-button').addEventListener('click',async()=>{
   if(scanBusy)return;
   clearPhoto();scanSource.textContent='';showBarcodeCheck();$('vin-live-progress').textContent='Waiting for camera frames. Barcode first; local text checks start if needed.';liveUi(true);
@@ -177,7 +178,7 @@ function applyScannedVin(value,method='') {
   clearTimeout(timer);
   const vin=normalizeVin(value);
   clearDecode();input.value=vin;clearPhoto();
-  scanSource.textContent=method==='live-text'?'VIN read from printed text on your device after barcode retries. Please review every character.':method==='live-barcode'?'VIN read from the live barcode scan on your device.':method==='barcode'?'VIN read from the barcode on your device.':method==='google-lens'?(barcodeCheck?.status==='unavailable'?'Google Lens used because the barcode reader could not run.':'VIN read by Google Lens after the barcode checks.'):method==='text'?'VIN read from printed text on your device.':'';
+  scanSource.textContent=method==='live-text'?'VIN read from the printed label. Please check every character.':method==='live-barcode'?'VIN read from the barcode.':method==='barcode'?'VIN read from the barcode.':method==='google-lens'?(barcodeCheck?.status==='unavailable'?'Google Lens used because the barcode reader could not run.':'VIN read by Google Lens after the barcode checks.'):method==='text'?'VIN read from the printed label. Please check every character.':'';
   input.scrollIntoView({block:'center',behavior:'auto'});
   if(validVin(vin))void decode();
   else status.textContent='VIN kept as entered. You can enter vehicle details manually or send the request as it is.';

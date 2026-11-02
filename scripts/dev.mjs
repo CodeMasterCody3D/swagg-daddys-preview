@@ -26,6 +26,7 @@ publicFiles.add('/owner/app-updates.js');
 publicFiles.add('/owner/app-updates-core.js');
 publicFiles.add('/vin-live.js');
 publicFiles.add('/vin-camera.js');
+publicFiles.add('/vin-repair.js');
 publicFiles.add('/owner/manuals.js');
 publicFiles.add('/owner/manuals.css');
 for (const file of ['/invoice.html','/invoice.css','/invoice-render.js','/invoice-view.js','/owner/invoice.js','/owner/invoice.css']) publicFiles.add(file);

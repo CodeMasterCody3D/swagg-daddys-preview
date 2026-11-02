@@ -4,55 +4,60 @@ import { readVinPhoto } from '../vin-reader.js';
 
 const vin='1HGCM82633A004352';
 const result=(values=[],warnings=[])=>({candidates:values.map(value=>({vin:value,corrected:false})),rawText:values.join('\n'),warnings});
-const unexpected=async()=>assert.fail('This reader must not be called');
+const never=()=>new Promise(()=>{});
+const onlyReal=async value=>value===vin;   // stands in for the NHTSA check
 
-test('a complete barcode fills the result without waiting for Google or sending the photo',async()=>{
+test('a complete barcode wins immediately, without waiting for Lens or printed text',async()=>{
   const barcode=result([vin]);
-  const answer=await readVinPhoto({}, {googleAvailable:new Promise(()=>{})},{barcode:async()=>barcode,google:unexpected,text:unexpected});
+  const answer=await readVinPhoto({}, {googleAvailable:never(),verify:onlyReal},{barcode:async()=>barcode,google:never,text:never});
   assert.equal(answer,barcode);
 });
 
-test('a photo without a VIN barcode automatically reaches Google with the same crop',async()=>{
+test('all three readers start together and get the same photo and crop; a Lens VIN with a good check digit wins',async()=>{
   const calls=[],photo={},rectangle={x:10,y:20,width:200,height:40},messages=[];
-  const answer=await readVinPhoto(photo,{googleAvailable:Promise.resolve(true),rectangle,api:'/api',progress:message=>messages.push(message)},{
+  const answer=await readVinPhoto(photo,{googleAvailable:Promise.resolve(true),rectangle,api:'/api',verify:onlyReal,progress:message=>messages.push(message)},{
     barcode:async(source,options)=>{calls.push('barcode');assert.equal(source,photo);assert.equal(options.rectangle,rectangle);return result();},
     google:async(source,options)=>{calls.push('google');assert.equal(source,photo);assert.equal(options.rectangle,rectangle);assert.equal(options.api,'/api');return result([vin]);},
-    text:unexpected
+    text:async(source,options)=>{calls.push('text');assert.equal(source,photo);assert.equal(options.rectangle,rectangle);return never();}
   });
-  assert.deepEqual(calls,['barcode','google']);assert.equal(answer.candidates[0].vin,vin);
-  assert.ok(messages.some(message=>message.includes('Switching to Google Lens')));
+  assert.deepEqual(calls.sort(),['barcode','google','text']);assert.equal(answer.candidates[0].vin,vin);
+  assert.ok(messages.some(message=>message.includes('Google Lens')));
 });
 
-test('multiple barcode VINs remain review choices without sending the image to Google',async()=>{
+test('whichever reader lands first wins: fast confirmed printed text beats a slow Lens',async()=>{
+  const answer=await readVinPhoto({}, {googleAvailable:true,verify:onlyReal},{barcode:async()=>result(),google:never,text:async()=>result([vin])});
+  assert.equal(answer.candidates[0].vin,vin);
+});
+
+test('multiple barcode VINs remain review choices',async()=>{
   const barcode=result([vin,'5YJ3E1EA7KF317000']);
-  const answer=await readVinPhoto({}, {googleAvailable:true},{barcode:async()=>barcode,google:unexpected,text:unexpected});
+  const answer=await readVinPhoto({}, {googleAvailable:true,verify:onlyReal},{barcode:async()=>barcode,google:never,text:never});
   assert.equal(answer,barcode);assert.equal(answer.candidates.length,2);
 });
 
-test('when Google is disabled a barcode miss uses local text recognition',async()=>{
-  const calls=[];
-  const answer=await readVinPhoto({}, {googleAvailable:Promise.resolve(false)},{
-    barcode:async()=>{calls.push('barcode');return result();},google:unexpected,
-    text:async()=>{calls.push('text');return result([vin]);}
-  });
-  assert.deepEqual(calls,['barcode','text']);assert.equal(answer.candidates[0].vin,vin);
+test('printed text needs NHTSA to confirm the VIN; a misread C-as-0 is fixed only when the fix is a real car',async()=>{
+  const fixed=await readVinPhoto({}, {googleAvailable:false,verify:onlyReal},{barcode:async()=>result(),google:never,text:async()=>result(['1HG0M82633A004352'])});
+  assert.deepEqual(fixed.candidates,[{vin,corrected:true,verified:true}]);
+  // Nothing verifies (e.g. NHTSA offline): the text reading comes back for the customer to review, unchanged.
+  const unverified=await readVinPhoto({}, {googleAvailable:false,verify:async()=>false},{barcode:async()=>result(),google:never,text:async()=>result([vin])});
+  assert.equal(unverified.candidates[0].vin,vin);assert.equal(unverified.candidates[0].verified,undefined);
 });
 
-test('an unavailable barcode reader can fall through to Google and preserves its warning',async()=>{
-  const answer=await readVinPhoto({}, {googleAvailable:true},{barcode:async()=>result([],['The barcode reader was unavailable.']),google:async()=>result([vin]),text:unexpected});
+test('an unavailable barcode reader still lets Lens answer and keeps its warning',async()=>{
+  const answer=await readVinPhoto({}, {googleAvailable:true,verify:onlyReal},{barcode:async()=>result([],['The barcode reader was unavailable.']),google:async()=>result([vin]),text:async()=>result()});
   assert.equal(answer.candidates[0].vin,vin);assert.match(answer.warnings[0],/barcode reader/);
 });
 
-test('Google verification errors stop after one attempt without a hidden retry',async()=>{
+test('a Lens verification error is reported once (no hidden retry) when no other reader finds a VIN',async()=>{
   let calls=0;
-  await assert.rejects(readVinPhoto({}, {googleAvailable:true},{barcode:async()=>result(),google:async()=>{calls++;throw new Error('Google requires verification.');},text:unexpected}),/requires verification/);
+  await assert.rejects(readVinPhoto({}, {googleAvailable:true,verify:onlyReal},{barcode:async()=>result(),google:async()=>{calls++;throw new Error('Google requires verification.');},text:async()=>result()}),/requires verification/);
   assert.equal(calls,1);
 });
 
-test('barcode diagnostics survive both successful and failed Google fallback',async()=>{
+test('barcode diagnostics survive both successful and failed Lens reads',async()=>{
   const diagnostics={version:'cubic-2',status:'unavailable',passes:[],symbols:[],error:'Barcode engine could not start.'};
   const barcode=async()=>({...result(),diagnostics});
-  const answer=await readVinPhoto({}, {googleAvailable:true},{barcode,google:async()=>result([vin]),text:unexpected});
+  const answer=await readVinPhoto({}, {googleAvailable:true,verify:onlyReal},{barcode,google:async()=>result([vin]),text:never});
   assert.deepEqual(answer.barcodeCheck,diagnostics);
-  await assert.rejects(readVinPhoto({}, {googleAvailable:true},{barcode,google:async()=>{throw new Error('Google unavailable');},text:unexpected}),error=>error.barcodeCheck===diagnostics);
+  await assert.rejects(readVinPhoto({}, {googleAvailable:true,verify:onlyReal},{barcode,google:async()=>{throw new Error('Google unavailable');},text:async()=>result()}),error=>error.barcodeCheck===diagnostics);
 });
