@@ -19,7 +19,17 @@ The customer site keeps its logo, card artwork, large Call Now button, Text Me l
 ## Remaining requested work
 
 - In-page AI chat on both the customer form and private owner dashboard. The requested integration must stay inside the page, use no paid AI API, and support manual conversation; automatic hints/autofill are optional. It is not implemented. Duck.ai currently sends `X-Frame-Options: SAMEORIGIN` and a CSP `frame-ancestors` restricted to DuckDuckGo domains, so an ordinary embed on this domain is blocked. A supported embedded provider or local model remains to be selected; do not represent an external chat link as this feature.
-- Android APK and push-notification rollout are deferred until after website changes. The notification implementation is preserved on `preview/owner-notifications`; its Android build and four device tests passed, but live FCM delivery still requires Firebase configuration and a signed app update.
+- Background Android request alerts still require Firebase configuration and an end-to-end phone test. The native notification code and a standalone phone sound test are included in the owner app update described below.
+
+## Android owner alerts
+
+The owner app's three-dot menu includes **Notifications**, with **Enable alerts**, **Test sound**, and **Phone settings**. Test sound posts a local notification without enrolling the phone for customer alerts. New request alerts require owner sign-in, the Firebase server connection, and Android notification permission. The sound and vibration follow the phone's notification settings.
+
+The server reads `FIREBASE_SERVICE_ACCOUNT_JSON` for FCM authorization and `FIREBASE_ANDROID_CONFIG_JSON` for the `com.swaggdaddysmobile` client. The authenticated session returns only validated public client options; service-account credentials remain server-only. The app can obtain those options after installation, so connecting Firebase does not require embedding a server key or rebuilding the APK. Missing configuration leaves incoming alerts unavailable and is explained in the Notifications menu.
+
+A saved customer request queues a generic alert containing an event ID, without customer details. Delivery failures remain in a durable outbox for scheduled retries, and the app deduplicates received event IDs. Turning alerts off, signing out, changing the owner password, or an expired/revoked device registration stops delivery for that device. Tapping an alert opens the owner inbox, where normal authentication still applies.
+
+Android checks validate local notification posting, the sound-test channel, duplicate-event handling, disabled alerts, invalid Firebase options, and the deployed sign-in page. They do not establish real FCM delivery to a physical phone. Release APK updates must retain the existing signing certificate.
 
 ## Hosting and activation
 
