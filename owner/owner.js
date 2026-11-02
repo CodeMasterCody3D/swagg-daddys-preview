@@ -1,5 +1,6 @@
 import { mountAppUpdates } from './app-updates.js';
 import { mountVehicleResearch } from './vehicle-research.js';
+import { mountManuals } from './manuals.js';
 const $ = id => document.getElementById(id);
 let csrf = '', items = [], next = null, active = null, statuses = [], objectUrls = [];
 const github = location.hostname.endsWith('github.io');
@@ -9,7 +10,7 @@ const apiBase = github ? (configuredOrigin ? configuredOrigin + '/api' : null) :
 function notice(message = '', error = false) { $('notice').textContent = message; $('notice').classList.toggle('error', error); }
 function show(id) { ['signin','inbox','unavailable'].forEach(name => $(name).hidden = name !== id); appUpdates.setSignedIn(id === 'inbox'); }
 function clearMedia() { objectUrls.forEach(url => URL.revokeObjectURL(url)); objectUrls = []; $('attachments').replaceChildren(); }
-function signedOut() { csrf = ''; items = []; active = null; next = null; clearMedia(); researchTools.reset(); ownerSection(false); $('cards').replaceChildren(); $('customer-dialog').close(); $('password').value = ''; show('signin'); }
+function signedOut() { csrf = ''; items = []; active = null; next = null; clearMedia(); researchTools.reset(); manuals.reset(); ownerSection(false); $('cards').replaceChildren(); $('customer-dialog').close(); $('password').value = ''; show('signin'); }
 async function api(path, options = {}) {
   const response = await fetch(apiBase + path, { ...options, credentials: 'same-origin', cache: 'no-store', headers: { ...(options.body ? { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf } : {}), ...options.headers } });
   const data = await response.json().catch(() => ({}));
@@ -20,6 +21,9 @@ function el(tag, value, className) { const node = document.createElement(tag); i
 const appUpdates = mountAppUpdates();
 const researchTools=mountVehicleResearch($('vehicle-research'),{api});
 function ownerSection(tools=false){$('owner-tools').hidden=!tools;$('requests-view').hidden=tools;for(const [id,selected]of [['tools-tab',tools],['requests-tab',!tools]]){$(id).setAttribute('aria-pressed',String(selected));$(id).classList.toggle('secondary',!selected);}}
+const manuals=mountManuals($('manual-finder'),{api,apiBase,onShow:()=>ownerSection(true),onUnauthorized:()=>signedOut()});
+// Opens the Tools finder at this request's vehicle (make/year, model filtered, VIN engine highlighted).
+function openManuals(item){$('customer-dialog').close();ownerSection(true);manuals.openVehicle({...(item.vehicleSpecs||{}),text:item.vehicle||''});}
 $('tools-tab').addEventListener('click',()=>ownerSection(true));$('requests-tab').addEventListener('click',()=>ownerSection(false));
 function contactLink(number, kind = 'tel') { return `${kind}:${number.replace(/[^+0-9]/g, '')}`; }
 function shortDate(date) { return new Date(date).toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
@@ -27,8 +31,8 @@ function requestVin(item) {
   const box=el('div',undefined,'vin-summary');box.append(el('strong','VIN'));
   const value=item.vin || item.vinSubmitted || '';
   if(value&&/^[A-HJ-NPR-Z0-9]{17}$/.test(item.vin || '')) {
-    const link=el('a',value,'vin-value');link.href=apiBase+'/requests/'+encodeURIComponent(item.id)+'/manuals';link.target='_blank';link.rel='noopener noreferrer';link.referrerPolicy='no-referrer';link.title='Find vehicle repair manuals on LEMON';
-    box.append(link,el('span','Tap VIN to find this vehicle’s LEMON manuals.','small muted'));
+    const link=el('button',value,'vin-value');link.type='button';link.title='Open this vehicle’s repair manual';link.addEventListener('click',()=>openManuals(item));
+    box.append(link,el('span','Tap VIN to open this vehicle’s repair manual.','small muted'));
   }else box.append(el('span',value || 'Not included in this saved request','vin-value'));
   if(item.vinSubmitted&&item.vinSubmitted!==item.vin&&item.vin)box.append(el('span','As entered: '+item.vinSubmitted,'small muted'));
   return box;
@@ -42,8 +46,8 @@ function jobTools(item) {
   if(/\bbrake|\bcaliper/.test(work))panel.append(el('p','For brake work, check the procedure for piston-retraction tools, caliper fastener sizes, lifting/support equipment and torque specifications.','small'));
   if(/\btransmission|\bgearbox|\bclutch/.test(work))panel.append(el('p','For transmission or clutch work, check the exact operation for support equipment, a transmission jack, adapters and manufacturer special tools.','small'));
   panel.append(el('p','Exact socket sizes and special tools have not been verified for this job. Use the matching vehicle manual and select the specific repair procedure.','small muted'));
-  const manual=el('a','Find this vehicle’s repair manual ↗','button secondary compact');
-  manual.href=apiBase+'/requests/'+encodeURIComponent(item.id)+'/manuals';manual.target='_blank';manual.rel='noopener noreferrer';manual.referrerPolicy='no-referrer';panel.append(manual);
+  const manual=el('button','Open this vehicle’s repair manual','button secondary compact');
+  manual.type='button';manual.addEventListener('click',()=>openManuals(item));panel.append(manual);
   return panel;
 }
 function render() {

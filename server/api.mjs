@@ -2,6 +2,7 @@ import { normalizeVin, validVin, specFields } from '../vin-core.js';
 import { createPushService, validDeviceId, clientNotificationConfig } from './push.mjs';
 import { randomUUID } from 'node:crypto';
 import { findManuals, manualResponse } from './manuals.mjs';
+import { createManualBrowser, ManualError } from './manual-browser.mjs';
 import { createVehicleResearch } from './vehicle-research.mjs';
 import { LensReadError, MAX_LENS_PHOTO_BYTES, readGoogleVinPhoto } from './lens.mjs';
 import { configured, cookieValue, digest, sessionCookie, SESSION_MS, token, verifyPassword } from './auth.mjs';
@@ -54,7 +55,7 @@ function validMedia(bytes, mime) {
 }
 
 // The adapter uses conditional writes, so rate limits and owner edits are safe across function instances.
-export function createApi({ store, env = process.env, now = Date.now, lensReader = readGoogleVinPhoto, research = createVehicleResearch(), notifications = createPushService({store, env, now}) }) {
+export function createApi({ store, env = process.env, now = Date.now, lensReader = readGoogleVinPhoto, research = createVehicleResearch(), manualBrowser = createManualBrowser(), notifications = createPushService({store, env, now}) }) {
   async function throttle(key, limit, windowMs) {
     for (let attempt = 0; attempt < 6; attempt++) {
       const entry = await store.get('limits/' + key);
@@ -217,6 +218,30 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
         await throttle('research-'+digest(auth.key),30,60*1000);
         try {return json(researchMatch?await research.lookup(researchMatch[1]):await research.detail(researchDetail[1],researchDetail[2]));}
         catch {return json({error:'Vehicle research is unavailable right now. Check the VIN and try again, or use the provider links.'},502);}
+      }
+      // Manuals finder (owner/manuals.js): LEMON pages, their images and VIN decoding,
+      // read server-side because the owner CSP allows only same-origin requests.
+      if(route.startsWith('/manuals/')&&request.method==='GET') {
+        const manualHeaders={'Cache-Control':'private, max-age=900','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'",'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'};
+        try {
+          if(route==='/manuals/page') {
+            await throttle('manual-pages-'+digest(auth.key),120,60*1000);
+            const page=await manualBrowser.page(url.searchParams.get('path')||'');
+            return new Response(new Blob([page.html]).stream(),{headers:{...manualHeaders,'Content-Type':'text/html; charset=utf-8','X-Lemon-Host':page.host}});
+          }
+          if(route==='/manuals/image') {
+            const image=await manualBrowser.image(url.searchParams.get('path')||'');
+            return new Response(image.bytes,{headers:{...manualHeaders,'Content-Type':image.type}});
+          }
+          const vinMatch=route.match(/^\/manuals\/vin\/([A-HJ-NPR-Z0-9]{17})$/);
+          if(vinMatch) {
+            await throttle('research-'+digest(auth.key),30,60*1000);
+            return json(await manualBrowser.vin(vinMatch[1]));
+          }
+        }catch(error){
+          if(error instanceof ManualError)return json({error:error.message},error.status);
+          throw error;
+        }
       }
       if (['POST','PATCH','DELETE','PUT'].includes(request.method)) {
         sameOrigin(request);
