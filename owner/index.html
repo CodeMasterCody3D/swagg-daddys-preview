@@ -16,6 +16,7 @@
     <header class="masthead">
       <img src="../assets/swagg-daddys-logo-transparent.webp" alt="Swagg Daddys Mobile Mechanics" width="180" height="114">
       <div><p class="eyebrow">ALWAYS ROLLIN.</p><h1>Owner inbox</h1><p class="muted">Your customers. Your next move.</p></div>
+      <div id="owner-app-actions" class="owner-app-actions" hidden><button id="app-updates-open" class="button secondary compact" type="button">Updates <span id="app-update-badge" class="update-badge" hidden></span></button></div>
     </header>
     <p id="notice" class="notice" role="status" aria-live="polite">Checking owner access…</p>
     <section id="unavailable" class="panel" hidden>
@@ -57,6 +58,17 @@
     </section>
     <p class="footnote">Swagg Daddys · Owner access · <a href="../privacy.html">Privacy policy</a></p>
   </main>
+  <dialog id="app-updates-dialog" aria-labelledby="app-updates-title">
+    <div class="dialog-top"><p class="eyebrow">OWNER APP</p><button id="app-updates-close" class="close" aria-label="Close app updates">×</button></div>
+    <h2 id="app-updates-title">App updates</h2>
+    <p id="app-installed-version" class="small muted"></p>
+    <p id="app-latest-status" role="status" aria-live="polite">Checking for updates…</p>
+    <p class="small muted">APKs download directly from GitHub. In the owner app, the download stays here; Android asks before installing it. Your owner login is still required to access requests.</p>
+    <button id="app-updates-retry" type="button" class="button secondary compact">Check again</button>
+    <div id="app-release-list" class="apk-releases"></div>
+    <p id="app-releases-status" role="status" aria-live="polite"></p>
+    <button id="app-releases-more" type="button" class="button secondary compact" hidden>Load older versions</button>
+  </dialog>
   <dialog id="customer-dialog" aria-labelledby="customer-title">
     <div class="dialog-top"><p class="eyebrow">SERVICE REQUEST</p><button id="close-detail" class="close" aria-label="Close customer details">×</button></div>
     <h2 id="customer-title"></h2><p id="customer-vehicle" class="muted"></p>
