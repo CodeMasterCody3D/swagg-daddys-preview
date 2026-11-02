@@ -205,7 +205,7 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
         } catch (error) {
           await Promise.allSettled(saved.map(key => store.remove(key))); throw error;
         }
-        try { await notifications.notify(context.waitUntil?.bind(context)); } catch { console.error('Owner notification delivery unavailable'); }
+        try { await notifications.notify(context.waitUntil?.bind(context),record); } catch { console.error('Owner notification delivery unavailable'); }
         return json({ received: true, reference: record.id }, 201);
       }
 

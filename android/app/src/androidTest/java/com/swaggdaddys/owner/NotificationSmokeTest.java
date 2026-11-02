@@ -59,6 +59,30 @@ public class NotificationSmokeTest {
         OwnerAlerts.show(context,"22222222-2222-2222-2222-222222222222");
         assertEquals(0,notifications.getActiveNotifications().length);
     }
+    @Test public void requestAlertShowsCustomerPreviewAndBrandLogoWithPrivateLockScreenText() throws Exception {
+        android.app.UiAutomation ui=InstrumentationRegistry.getInstrumentation().getUiAutomation();
+        ui.grantRuntimePermission(context.getPackageName(),Manifest.permission.POST_NOTIFICATIONS);
+        context.getSharedPreferences(OwnerAlerts.PREFS,0).edit().putBoolean("enabled",true).commit();
+        OwnerAlerts.createChannel(context);
+        OwnerAlerts.show(context,"33333333-3333-3333-3333-333333333333","Jordan Smith","Car will not start. Clicking sound when I turn the key.");
+        Notification alert=awaitAlert(OwnerAlerts.ID);
+        assertEquals("Jordan Smith · Service request",alert.extras.getString(Notification.EXTRA_TITLE));
+        assertEquals("Car will not start. Clicking sound when I turn the key.",alert.extras.getString(Notification.EXTRA_TEXT));
+        assertEquals(R.drawable.ic_service_notification,alert.getSmallIcon().getResId());
+        assertNotNull(alert.getLargeIcon());
+        assertEquals(R.mipmap.ic_launcher,alert.getLargeIcon().getResId());
+        assertEquals(Notification.VISIBILITY_PRIVATE,alert.visibility);
+        assertNotNull(alert.publicVersion);
+        assertEquals("New service request",alert.publicVersion.extras.getString(Notification.EXTRA_TITLE));
+        assertNotNull(alert.contentIntent);
+        ui.executeShellCommand("cmd statusbar expand-notifications").close();
+        SystemClock.sleep(400);
+        android.graphics.Bitmap picture=ui.takeScreenshot();
+        assertNotNull(picture);
+        try(java.io.FileOutputStream out=new java.io.FileOutputStream(new java.io.File(context.getExternalFilesDir(null),"notification-preview.png"))) {
+            assertTrue(picture.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out));
+        } finally { picture.recycle(); ui.executeShellCommand("cmd statusbar collapse").close(); }
+    }
     @Test public void explicitSoundTestWorksWithoutServerEnrollment() throws Exception {
         InstrumentationRegistry.getInstrumentation().getUiAutomation()
                 .grantRuntimePermission(context.getPackageName(),Manifest.permission.POST_NOTIFICATIONS);
