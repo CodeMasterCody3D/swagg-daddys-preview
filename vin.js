@@ -22,7 +22,12 @@ function showBarcodeCheck(check) {
 }
 let timer, revision = 0, abort, scanBusy = false;
 let liveScanner;
-function liveUi(open){$('vin-live-tools').hidden=!open;$('vin-photo-button').setAttribute('aria-expanded',String(open));$('vin-photo-button').disabled=open&&Boolean(liveScanner?.active);$('vin-live-capture').disabled=!liveScanner?.active;}
+function liveUi(open){
+  const panel=$('vin-live-tools');panel.hidden=!open;
+  document.documentElement.classList.toggle('vin-scanner-open',open);
+  if(open&&!panel.open)panel.showModal();else if(!open&&panel.open)panel.close();
+  $('vin-photo-button').setAttribute('aria-expanded',String(open));$('vin-photo-button').disabled=open&&Boolean(liveScanner?.active);$('vin-live-capture').disabled=!liveScanner?.active;
+}
 function stopLive(message=''){liveScanner?.stop();liveUi(false);if(message){restoreVinStatus();status.textContent=message;}}
 let lensApi='/api';
 if(location.hostname.endsWith('github.io')) {
@@ -147,6 +152,8 @@ $('vin-photo-button').addEventListener('click',async()=>{
   $('vin-photo-button').disabled=true;$('vin-live-capture').disabled=true;
   await liveScanner.start();if(liveScanner.active)$('vin-live-capture').disabled=false;
 });
+$('vin-live-tools').addEventListener('cancel',event=>{event.preventDefault();stopLive('Camera stopped.');});
+$('vin-live-tools').addEventListener('close',()=>{if(!$('vin-live-tools').open)stopLive();});
 $('vin-live-stop').addEventListener('click',()=>stopLive('Camera stopped. You can start a new live scan or choose a VIN photo.'));
 $('vin-camera-fallback').addEventListener('click',()=>{stopLive();$('vin-photo').click();});
 $('vin-live-capture').addEventListener('click',async()=>{
@@ -168,6 +175,7 @@ function applyScannedVin(value,method='') {
   const vin=normalizeVin(value);
   clearDecode();input.value=vin;clearPhoto();
   scanSource.textContent=method==='live-text'?'VIN read from printed text on your device after barcode retries. Please review every character.':method==='live-barcode'?'VIN read from the live barcode scan on your device.':method==='barcode'?'VIN read from the barcode on your device.':method==='google-lens'?(barcodeCheck?.status==='unavailable'?'Google Lens used because the barcode reader could not run.':'VIN read by Google Lens after the barcode checks.'):method==='text'?'VIN read from printed text on your device.':'';
+  input.scrollIntoView({block:'center',behavior:'auto'});
   if(validVin(vin))void decode();
   else status.textContent='VIN kept as entered. You can enter vehicle details manually or send the request as it is.';
 }
