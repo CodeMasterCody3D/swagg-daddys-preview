@@ -1,3 +1,4 @@
+import { mountAppUpdates } from './app-updates.js';
 import { mountVehicleResearch } from './vehicle-research.js';
 const $ = id => document.getElementById(id);
 let csrf = '', items = [], next = null, active = null, statuses = [], objectUrls = [];
@@ -6,7 +7,7 @@ const backend = window.SWAGG_CONFIG?.backendOrigin || '';
 const configuredOrigin = (() => { try { const u = new URL(backend); return u.protocol === 'https:' ? u.origin : ''; } catch { return ''; } })();
 const apiBase = github ? (configuredOrigin ? configuredOrigin + '/api' : null) : '/api';
 function notice(message = '', error = false) { $('notice').textContent = message; $('notice').classList.toggle('error', error); }
-function show(id) { ['signin','inbox','unavailable'].forEach(name => $(name).hidden = name !== id); }
+function show(id) { ['signin','inbox','unavailable'].forEach(name => $(name).hidden = name !== id); appUpdates.setSignedIn(id === 'inbox'); }
 function clearMedia() { objectUrls.forEach(url => URL.revokeObjectURL(url)); objectUrls = []; $('attachments').replaceChildren(); }
 function signedOut() { csrf = ''; items = []; active = null; next = null; clearMedia(); researchTools.reset(); ownerSection(false); $('cards').replaceChildren(); $('customer-dialog').close(); $('password').value = ''; show('signin'); }
 async function api(path, options = {}) {
@@ -16,6 +17,7 @@ async function api(path, options = {}) {
   return data;
 }
 function el(tag, value, className) { const node = document.createElement(tag); if (value !== undefined) node.textContent = value; if (className) node.className = className; return node; }
+const appUpdates = mountAppUpdates();
 const researchTools=mountVehicleResearch($('vehicle-research'),{api});
 function ownerSection(tools=false){$('owner-tools').hidden=!tools;$('requests-view').hidden=tools;for(const [id,selected]of [['tools-tab',tools],['requests-tab',!tools]]){$(id).setAttribute('aria-pressed',String(selected));$(id).classList.toggle('secondary',!selected);}}
 $('tools-tab').addEventListener('click',()=>ownerSection(true));$('requests-tab').addEventListener('click',()=>ownerSection(false));

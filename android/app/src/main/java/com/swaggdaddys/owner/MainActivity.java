@@ -46,6 +46,7 @@ public final class MainActivity extends Activity {
     private String retryUrl = NavigationPolicy.HOME;
     private boolean destroyed;
     private OwnerPushController push;
+    private OwnerUpdateController updates;
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
@@ -116,6 +117,7 @@ public final class MainActivity extends Activity {
         root.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(root);
         push = new OwnerPushController(this);
+        updates = new OwnerUpdateController(this);
 
         if (Build.VERSION.SDK_INT >= 33) {
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
@@ -128,6 +130,8 @@ public final class MainActivity extends Activity {
     @SuppressWarnings("deprecation")
     private void configureWebView() {
         WebSettings settings = web.getSettings();
+        settings.setUserAgentString(settings.getUserAgentString() + " SwaggDaddysOwner/"
+                + BuildConfig.VERSION_NAME + " (build:" + BuildConfig.VERSION_CODE + ")");
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(false);
@@ -147,7 +151,7 @@ public final class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view,
                                                               WebResourceRequest request) {
-                return route(request.getUrl().toString(), request.isForMainFrame());
+                return route(request.getUrl().toString(), request.isForMainFrame(), request.hasGesture());
             }
 
             @Override public void onPageStarted(WebView view, String url,
@@ -196,7 +200,7 @@ public final class MainActivity extends Activity {
                         if (NavigationPolicy.classify(url) == NavigationPolicy.Route.INTERNAL) {
                             loadOwner(url);
                         } else {
-                            route(url, true);
+                            route(url, true, true);
                         }
                         popup.post(popup::destroy);
                         return true;
@@ -208,6 +212,9 @@ public final class MainActivity extends Activity {
             }
         });
         web.setDownloadListener((url, userAgent, disposition, type, length) -> {
+            if (UpdatePolicy.isApk(url) && updates != null && NavigationPolicy.classify(web.getUrl()) == NavigationPolicy.Route.INTERNAL) {
+                updates.start(url); return;
+            }
             // Attachments use private blob URLs. Keep them inside the authenticated page.
             new AlertDialog.Builder(this).setTitle("Save an attachment")
                     .setMessage("Photos and videos can be viewed here. To save a file, open the owner inbox in your browser and sign in there.")
@@ -224,11 +231,15 @@ public final class MainActivity extends Activity {
         menu.getMenu().add(0, 3, 2, "Open in browser");
         menu.getMenu().add(0, 4, 3, "Text service upload link");
         menu.getMenu().add(0, 5, 4, "Notifications");
+        menu.getMenu().add(0, 6, 5, "Updates");
+        if (updates.hasDownload()) menu.getMenu().add(0, 7, 6, "Downloaded update");
         menu.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == 1) loadOwner(NavigationPolicy.HOME);
             else if (item.getItemId() == 2) loadOwner(retryUrl);
             else if (item.getItemId() == 4) prepareUploadText();
             else if (item.getItemId() == 5) push.settings();
+            else if (item.getItemId() == 6) loadOwner(NavigationPolicy.HOME + "#updates");
+            else if (item.getItemId() == 7) updates.show();
             else openExternal(new Intent(Intent.ACTION_VIEW, Uri.parse(NavigationPolicy.HOME)));
             return true;
         });
@@ -276,7 +287,11 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private boolean route(String url, boolean mainFrame) {
+    private boolean route(String url, boolean mainFrame, boolean userGesture) {
+        if (UpdatePolicy.isApk(url)) {
+            if (mainFrame && userGesture && updates != null && NavigationPolicy.classify(web.getUrl()) == NavigationPolicy.Route.INTERNAL) updates.start(url);
+            return true;
+        }
         NavigationPolicy.Route destination = NavigationPolicy.classify(url);
         if (destination == NavigationPolicy.Route.INTERNAL) return false;
         if (!mainFrame) return true;
@@ -326,6 +341,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onPause() {
         if (push != null) push.pause();
+        if (updates != null) updates.pause();
         CookieManager.getInstance().flush();
         web.onPause();
         super.onPause();
@@ -335,6 +351,7 @@ public final class MainActivity extends Activity {
         super.onResume();
         if (web != null) web.onResume();
         if (push != null) push.resume();
+        if (updates != null) updates.resume();
     }
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
@@ -352,6 +369,7 @@ public final class MainActivity extends Activity {
     @Override protected void onDestroy() {
         destroyed = true;
         if (push != null) push.destroy();
+        if (updates != null) updates.destroy();
         if (web != null) {
             web.stopLoading();
             web.setWebChromeClient(null);

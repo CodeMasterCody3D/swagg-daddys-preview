@@ -42,6 +42,18 @@ public class OwnerSmokeTest {
         });
     }
 
+    @Test public void appReportsItsVersionAndCanVerifyItsOwnSignedPackage() {
+        activity.getScenario().onActivity(owner -> {
+            WebView web = findWeb(owner.getWindow().getDecorView());
+            assertTrue(web.getSettings().getUserAgentString().contains("SwaggDaddysOwner/1.0.4 (build:5)"));
+            assertNull(OwnerUpdateController.validatePackage(owner, new java.io.File(owner.getApplicationInfo().sourceDir)));
+            try {
+                String[] permissions = owner.getPackageManager().getPackageInfo(owner.getPackageName(), android.content.pm.PackageManager.GET_PERMISSIONS).requestedPermissions;
+                assertTrue(java.util.Arrays.asList(permissions).contains("android.permission.REQUEST_INSTALL_PACKAGES"));
+            } catch (Exception error) { throw new AssertionError(error); }
+        });
+    }
+
     @Test public void deployedLoginLoadsWithoutSigningInOrViewingCustomers() throws Exception {
         long deadline = System.currentTimeMillis() + 60000;
         while (System.currentTimeMillis() < deadline) {
