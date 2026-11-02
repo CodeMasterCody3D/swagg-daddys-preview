@@ -1,6 +1,7 @@
 import { mountAppUpdates } from './app-updates.js';
 import { mountVehicleResearch } from './vehicle-research.js';
 import { mountManuals } from './manuals.js';
+import { mountInvoiceEditor } from './invoice.js';
 const $ = id => document.getElementById(id);
 let csrf = '', items = [], next = null, active = null, statuses = [], objectUrls = [];
 const github = location.hostname.endsWith('github.io');
@@ -21,6 +22,7 @@ function el(tag, value, className) { const node = document.createElement(tag); i
 const appUpdates = mountAppUpdates();
 const researchTools=mountVehicleResearch($('vehicle-research'),{api});
 function ownerSection(tools=false){$('owner-tools').hidden=!tools;$('requests-view').hidden=tools;for(const [id,selected]of [['tools-tab',tools],['requests-tab',!tools]]){$(id).setAttribute('aria-pressed',String(selected));$(id).classList.toggle('secondary',!selected);}}
+const invoices=mountInvoiceEditor({api});
 const manuals=mountManuals($('manual-finder'),{api,apiBase,onShow:()=>ownerSection(true),onUnauthorized:()=>signedOut()});
 // Opens the Tools finder at this request's vehicle (make/year, model filtered, VIN engine highlighted).
 function openManuals(item){$('customer-dialog').close();ownerSection(true);manuals.openVehicle({...(item.vehicleSpecs||{}),text:item.vehicle||''});}
@@ -125,6 +127,7 @@ async function openCustomer(id) {
       button.addEventListener('click',loadHistory);void loadHistory();
     }
     fact('Tools and repair references',jobTools(item));
+    if(!item.deletedAt){const invoiceButton=el('button','Create or edit invoice','button secondary compact');invoiceButton.type='button';invoiceButton.addEventListener('click',()=>invoices.open(item));fact('Invoice',invoiceButton);}
     if(item.consentAt)fact('Service request disclosure accepted',shortDate(item.consentAt));
     $('update-form').hidden=Boolean(item.deletedAt); $('delete-request').hidden=Boolean(item.deletedAt); $('restore-request').hidden=!item.deletedAt; $('delete-confirmation').hidden=true;
     if (item.deletedAt) fact('Moved to Trash',shortDate(item.deletedAt));
