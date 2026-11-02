@@ -95,6 +95,20 @@ public class NotificationSmokeTest {
         assertNotNull(notifications.getNotificationChannel(OwnerAlerts.CHANNEL).getSound());
         assertFalse(context.getSharedPreferences(OwnerAlerts.PREFS,0).getBoolean("enabled",false));
     }
+    @Test public void urgentRequestsUseTheThreeRingChannelAndSayUrgent() throws Exception {
+        InstrumentationRegistry.getInstrumentation().getUiAutomation()
+                .grantRuntimePermission(context.getPackageName(),Manifest.permission.POST_NOTIFICATIONS);
+        context.getSharedPreferences(OwnerAlerts.PREFS,0).edit().putBoolean("enabled",true).commit();
+        OwnerAlerts.createChannel(context);
+        OwnerAlerts.show(context,"44444444-4444-4444-4444-444444444444","Jordan Smith","Stuck on I-65.",true,true);
+        Notification alert=awaitAlert(OwnerAlerts.ID);
+        assertEquals(OwnerAlerts.URGENT_CHANNEL,alert.getChannelId());
+        assertEquals("URGENT · Still waiting · Jordan Smith · Service request",alert.extras.getString(Notification.EXTRA_TITLE));
+        android.app.NotificationChannel urgent=notifications.getNotificationChannel(OwnerAlerts.URGENT_CHANNEL);
+        assertEquals(NotificationManager.IMPORTANCE_HIGH,urgent.getImportance());
+        assertTrue(urgent.getSound().toString().endsWith("/"+R.raw.urgent_triple));
+        assertEquals(6,urgent.getVibrationPattern().length);
+    }
     @Test public void malformedServerConfigurationCannotInitializeFirebase() throws Exception {
         assertFalse(OwnerApplication.configure(context,new org.json.JSONObject()
                 .put("appId","wrong").put("apiKey","invalid").put("senderId","123").put("projectId","example-project")));

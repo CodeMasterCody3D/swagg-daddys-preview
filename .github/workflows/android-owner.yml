@@ -67,7 +67,7 @@ jobs:
             adb install -r -t android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
             adb shell am instrument -w -r com.swaggdaddysmobile.test/androidx.test.runner.AndroidJUnitRunner > apk-output/device-tests.txt
             cat apk-output/device-tests.txt
-            python -c "from pathlib import Path; result = Path('apk-output/device-tests.txt').read_text(); assert 'OK (8 tests)' in result and 'FAILURES!!!' not in result, result"
+            python -c "from pathlib import Path; result = Path('apk-output/device-tests.txt').read_text(); assert 'OK (9 tests)' in result and 'FAILURES!!!' not in result, result"
             adb pull /sdcard/Android/data/com.swaggdaddysmobile/files/notification-preview.png apk-output/notification-preview.png
       - name: Package unsigned release and signing verifier
         if: success()
