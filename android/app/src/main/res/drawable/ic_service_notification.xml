@@ -1,3 +1,5 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-    <path android:fillColor="#FFFFFFFF" android:pathData="M18,16V11C18,7.93 16.36,5.36 13.5,4.68V4C13.5,3.17 12.83,2.5 12,2.5S10.5,3.17 10.5,4V4.68C7.63,5.36 6,7.92 6,11V16L4,18V19H20V18L18,16M12,22C13.1,22 14,21.1 14,20H10C10,21.1 10.9,22 12,22Z" />
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="32" android:viewportHeight="32">
+    <!-- Car and wrench brand mark for Android's monochrome status icon. -->
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M11,6H21C22,6 22.6,6.6 23,7.5L25.5,14H6.5L9,7.5C9.4,6.6 10,6 11,6ZM11,8L9.4,12H22.6L21,8Z M7,14H25C26.7,14 28,15.3 28,17V24H26V27H22V24H10V27H6V24H4V17C4,15.3 5.3,14 7,14ZM7,17V20H11V17Z M21,17V20H25V17Z M13,19V21H19V19Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M2,3L4.5,5.5L6,4L3.5,1.5C7,1 9,4 7.5,7L10,9.5L8,11.5L5.5,9C2,10 0,7 2,3Z M30,3L27.5,5.5L26,4L28.5,1.5C25,1 23,4 24.5,7L22,9.5L24,11.5L26.5,9C30,10 32,7 30,3Z" />
 </vector>

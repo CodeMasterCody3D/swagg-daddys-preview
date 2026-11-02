@@ -6,6 +6,16 @@ const devicePattern = /^[A-Za-z0-9_-]{20,80}$/;
 export const validDeviceId = value => typeof value === 'string' && devicePattern.test(value);
 const tokenValid = value => typeof value === 'string' && /^[A-Za-z0-9_:.-]{20,4096}$/.test(value);
 
+function previewText(value, limit) {
+  const clean = (typeof value === 'string' ? value : '').replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim();
+  const characters = [...clean];
+  return characters.length > limit ? characters.slice(0, limit - 1).join('') + '…' : clean;
+}
+export function notificationPreview(request = {}) {
+  return { customerName: previewText(request.name, 80) || 'Customer',
+    requestSummary: previewText(request.details, 160) || previewText(request.issue, 160) || 'Tap to view the service request.' };
+}
+
 // Only public Android client options leave the server, after owner authentication.
 // The service-account credentials are never included in this result.
 export function clientNotificationConfig(env) {
@@ -44,11 +54,16 @@ export function fcmSender(env, fetcher = fetch, now = Date.now) {
   }
   return {
     ready:Boolean(account),
-    async send(token, eventId) {
+    async send(token, eventId, preview) {
       const bearer = await accessToken();
+      const data = { type:'service_request', eventId };
+      if (preview) {
+        data.customerName = previewText(preview.customerName, 80) || 'Customer';
+        data.requestSummary = previewText(preview.requestSummary, 160) || 'Tap to view the service request.';
+      }
       const response = await fetcher('https://fcm.googleapis.com/v1/projects/'+account.project_id+'/messages:send', {
         method:'POST', signal:AbortSignal.timeout(5000), headers:{ Authorization:'Bearer '+bearer, 'Content-Type':'application/json' },
-        body:JSON.stringify({ message:{ token, data:{ type:'service_request', eventId }, android:{ priority:'HIGH', ttl:'86400s', collapse_key:'owner-inbox' } } })
+        body:JSON.stringify({ message:{ token, data, android:{ priority:'HIGH', ttl:'86400s', collapse_key:'owner-inbox' } } })
       });
       if (response.ok) return 'sent';
       const body = await response.json().catch(()=>({}));
@@ -89,20 +104,20 @@ export function createPushService({ store, env, now = Date.now, sender = fcmSend
         const entry=await store.get(deviceKey);if(!entry)return;
         const device=entry.value;
         if(device.expires<=now() || device.authVersion!==authVersion()){await store.remove(deviceKey);return;}
-        try { if(await sender.send(device.token,event.value.id)==='unregistered')await store.remove(deviceKey); }
+        try { if(await sender.send(device.token,event.value.id,event.value.preview)==='unregistered')await store.remove(deviceKey); }
         catch { pending.push(deviceKey); }
       }));
       if(!pending.length)await store.remove(key);
       else await store.put(key,{...event.value,devices:pending},event.etag);
     }
   }
-  async function notify(waitUntil) {
+  async function notify(waitUntil, request) {
     if(!sender.ready)return;
     const devices=(await store.keys('push-devices/')).slice(0,10);
     if(!devices.length)return;
     const id=randomUUID();
     const key='push-outbox/'+String(now())+'-'+id;
-    await store.put(key,{id,devices,expires:now()+DAY});
+    await store.put(key,{id,devices,expires:now()+DAY,...(request ? {preview:notificationPreview(request)} : {})});
     // Persist first, then let Netlify finish delivery after the intake response.
     // The scheduled retry can recover if this process exits before delivery.
     const delivery = drain([key]).catch(() => {});

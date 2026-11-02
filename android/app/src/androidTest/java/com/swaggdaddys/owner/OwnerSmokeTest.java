@@ -45,7 +45,7 @@ public class OwnerSmokeTest {
     @Test public void appReportsItsVersionAndCanVerifyItsOwnSignedPackage() {
         activity.getScenario().onActivity(owner -> {
             WebView web = findWeb(owner.getWindow().getDecorView());
-            assertTrue(web.getSettings().getUserAgentString().contains("SwaggDaddysOwner/1.0.4 (build:5)"));
+            assertTrue(web.getSettings().getUserAgentString().contains("SwaggDaddysOwner/1.0.5 (build:6)"));
             assertNull(OwnerUpdateController.validatePackage(owner, new java.io.File(owner.getApplicationInfo().sourceDir)));
             try {
                 String[] permissions = owner.getPackageManager().getPackageInfo(owner.getPackageName(), android.content.pm.PackageManager.GET_PERMISSIONS).requestedPermissions;
