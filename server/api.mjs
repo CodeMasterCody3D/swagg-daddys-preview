@@ -3,6 +3,7 @@ import { createPushService, validDeviceId, clientNotificationConfig } from './pu
 import { randomUUID } from 'node:crypto';
 import { findManuals, manualResponse } from './manuals.mjs';
 import { createManualBrowser, ManualError } from './manual-browser.mjs';
+import { createInvoices } from './invoices.mjs';
 import { createVehicleResearch } from './vehicle-research.mjs';
 import { LensReadError, MAX_LENS_PHOTO_BYTES, readGoogleVinPhoto } from './lens.mjs';
 import { configured, cookieValue, digest, sessionCookie, SESSION_MS, token, verifyPassword } from './auth.mjs';
@@ -55,7 +56,8 @@ function validMedia(bytes, mime) {
 }
 
 // The adapter uses conditional writes, so rate limits and owner edits are safe across function instances.
-export function createApi({ store, env = process.env, now = Date.now, lensReader = readGoogleVinPhoto, research = createVehicleResearch(), manualBrowser = createManualBrowser(), notifications = createPushService({store, env, now}) }) {
+export function createApi({ store, invoices = null, env = process.env, now = Date.now, lensReader = readGoogleVinPhoto, research = createVehicleResearch(), manualBrowser = createManualBrowser(), notifications = createPushService({store, env, now}) }) {
+  const invoiceStore = invoices || createInvoices({ store, now });
   async function throttle(key, limit, windowMs) {
     for (let attempt = 0; attempt < 6; attempt++) {
       const entry = await store.get('limits/' + key);
@@ -134,6 +136,14 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
       }
 
       if (!configured(env)) fail(503, 'Owner access has not been activated yet. Please call or text 205-492-8772.');
+      // The customer's invoice link. The 128-bit token is the only key; nothing else is public.
+      const invoiceView = route.match(/^\/invoice\/([a-f0-9]{32})$/);
+      if (invoiceView && request.method === 'GET') {
+        await throttle('invoice-view-' + digest(context.ip || 'unknown'), 60, 15 * 60 * 1000);
+        const invoice = await invoiceStore.byToken(invoiceView[1]);
+        if (!invoice) fail(404, 'This invoice link is not valid. Please call or text 205-492-8772.');
+        return json(invoice);
+      }
 
       if (route === '/login' && request.method === 'POST') {
         sameOrigin(request);
@@ -297,6 +307,16 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
         return json({items:matches.slice(0,50),next:matches.length>50 ? matches[49].id : null});
       }
       // Opening a request in the owner app marks it checked: its reminders stop.
+      // Owner invoice for a request: read (a fresh draft if none yet) and save.
+      const invoiceMatch = route.match(/^\/requests\/(\d{13}-[0-9a-f-]{36})\/invoice$/);
+      if (invoiceMatch && ['GET','PUT'].includes(request.method)) {
+        const entry = await store.get('requests/' + invoiceMatch[1]);
+        if (!entry || entry.value.deletedAt) fail(404, 'Request not found.');
+        if (request.method === 'GET') return json(await invoiceStore.get(entry.value));
+        const saved = await invoiceStore.save(entry.value, await jsonBody(request, 65536));
+        if (saved.conflict) fail(409, 'This invoice changed. Reload it before saving.');
+        return json(saved.invoice);
+      }
       const seenMatch = route.match(/^\/requests\/(\d{13}-[0-9a-f-]{36})\/seen$/);
       if (seenMatch && request.method === 'POST') { await notifications.checked?.(seenMatch[1]); return json({ checked:true }); }
       const match = route.match(/^\/requests\/([^/]+)(?:\/media\/([a-f0-9-]{36})|\/(restore))?$/);

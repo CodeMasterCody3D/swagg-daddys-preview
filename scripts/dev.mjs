@@ -28,6 +28,7 @@ publicFiles.add('/vin-live.js');
 publicFiles.add('/vin-camera.js');
 publicFiles.add('/owner/manuals.js');
 publicFiles.add('/owner/manuals.css');
+for (const file of ['/invoice.html','/invoice.css','/invoice-render.js','/invoice-view.js','/owner/invoice.js','/owner/invoice.css']) publicFiles.add(file);
 const types = { '.json':'application/json', '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.webp':'image/webp', '.wasm':'application/wasm', '.gz':'application/gzip', '.txt':'text/plain' };
 const root = resolve('.');
 const server = createServer(async (req,res) => {

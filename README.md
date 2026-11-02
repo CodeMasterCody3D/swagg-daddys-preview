@@ -21,6 +21,14 @@ The customer site keeps its logo, card artwork, large Call Now button, Text Me l
 - In-page AI chat on both the customer form and private owner dashboard. The requested integration must stay inside the page, use no paid AI API, and support manual conversation; automatic hints/autofill are optional. It is not implemented. Duck.ai currently sends `X-Frame-Options: SAMEORIGIN` and a CSP `frame-ancestors` restricted to DuckDuckGo domains, so an ordinary embed on this domain is blocked. A supported embedded provider or local model remains to be selected; do not represent an external chat link as this feature.
 - Background Android request alerts still require Firebase configuration and an end-to-end phone test. The native notification code and a standalone phone sound test are included in the owner app update described below.
 
+## Invoices
+
+Each request has **Create or edit invoice** in the owner app. The editor has status (Draft, Sent, Paid, Void), date, bill-to, vehicle (description, VIN, odometer), customer concern, work performed, and line items for labor (hours × rate; the last rate is remembered on the phone), parts (part no., qty × unit price) and fees. The fees start with the $65 diagnostic fee, and **Add mileage fee** turns driving miles into "first 30 included, $2.00/mi after". It also has discount, sales tax on parts only (starts at 10%, editable per invoice, 0–20%), amount paid with payment method, recommended service, and terms. A live preview of the finished invoice updates as you type.
+
+Saving assigns the next number (`SD-<year>-0001`, restarting each year) and a private 128-bit link, `/invoice.html?t=<token>`. **Text invoice to customer** saves the invoice, marks a draft as Sent, and opens Messages to the customer with the link, total and balance. The customer page shows a printable white invoice with the logo, 205-492-8772, admin@swaggdaddys.com and swaggdaddys.com, plus **Print or save PDF**. Setting the status to Void turns the link off.
+
+The server stores money in cents and recomputes every total, so the page cannot submit a wrong total. Owner routes: `GET/PUT /api/requests/<id>/invoice` (session; PUT also needs CSRF and the current revision). Public route: `GET /api/invoice/<token>`, limited to 60 views per 15 minutes per IP; it never returns the token or internal ids. The default terms are a starting point for the owner to edit, not legal or tax advice.
+
 ## Repeat alerts until a request is opened
 
 Every new request keeps alerting the owner until he opens it in the owner app (or changes its status, or moves it to Trash):
