@@ -4,9 +4,12 @@ import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.os.SystemClock;
+import android.service.notification.StatusBarNotification;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import static org.junit.Assert.*;
@@ -15,9 +18,25 @@ import static org.junit.Assert.*;
 public class NotificationSmokeTest {
     private final Context context=InstrumentationRegistry.getInstrumentation().getTargetContext();
     private final NotificationManager notifications=context.getSystemService(NotificationManager.class);
-    @After public void clear() {
-        notifications.cancelAll();
+    @Before public void reset() throws Exception { clear(); }
+    @After public void clear() throws Exception {
         context.getSharedPreferences(OwnerAlerts.PREFS,0).edit().clear().commit();
+        notifications.cancelAll();
+        // Android removes posted notifications asynchronously. Wait before the
+        // next case so an old sound-test alert cannot satisfy its appearance check.
+        long deadline=SystemClock.elapsedRealtime()+3000;
+        while(notifications.getActiveNotifications().length!=0&&SystemClock.elapsedRealtime()<deadline)Thread.sleep(50);
+        assertEquals("Previous test notifications must be removed",0,notifications.getActiveNotifications().length);
+    }
+    private Notification awaitAlert(int id) throws Exception {
+        long deadline=SystemClock.elapsedRealtime()+3000;
+        do {
+            for(StatusBarNotification posted:notifications.getActiveNotifications()) {
+                if(posted.getId()==id)return posted.getNotification();
+            }
+            Thread.sleep(50);
+        } while(SystemClock.elapsedRealtime()<deadline);
+        throw new AssertionError("Expected notification ID "+id+" was not posted");
     }
     @Test public void allowedAlertAppearsInAndroidAndRetryDoesNotDuplicateIt() throws Exception {
         InstrumentationRegistry.getInstrumentation().getUiAutomation()
@@ -25,10 +44,8 @@ public class NotificationSmokeTest {
         context.getSharedPreferences(OwnerAlerts.PREFS,0).edit().putBoolean("enabled",true).commit();
         OwnerAlerts.createChannel(context);
         OwnerAlerts.show(context,"11111111-1111-1111-1111-111111111111");
-        long deadline=System.currentTimeMillis()+3000;
-        while(notifications.getActiveNotifications().length==0&&System.currentTimeMillis()<deadline)Thread.sleep(50);
+        Notification alert=awaitAlert(OwnerAlerts.ID);
         assertEquals(1,notifications.getActiveNotifications().length);
-        Notification alert=notifications.getActiveNotifications()[0].getNotification();
         assertEquals("New service request",alert.extras.getString(Notification.EXTRA_TITLE));
         assertNotNull(alert.contentIntent);
         OwnerAlerts.show(context,"11111111-1111-1111-1111-111111111111");
@@ -48,10 +65,9 @@ public class NotificationSmokeTest {
         context.getSharedPreferences(OwnerAlerts.PREFS,0).edit().putBoolean("enabled",false).commit();
         OwnerAlerts.createChannel(context);
         OwnerAlerts.test(context);
-        long deadline=System.currentTimeMillis()+3000;
-        while(notifications.getActiveNotifications().length==0&&System.currentTimeMillis()<deadline)Thread.sleep(50);
+        Notification alert=awaitAlert(OwnerAlerts.TEST_ID);
         assertEquals(1,notifications.getActiveNotifications().length);
-        assertEquals("Swagg Daddys test alert",notifications.getActiveNotifications()[0].getNotification().extras.getString(Notification.EXTRA_TITLE));
+        assertEquals("Swagg Daddys test alert",alert.extras.getString(Notification.EXTRA_TITLE));
         assertNotNull(notifications.getNotificationChannel(OwnerAlerts.CHANNEL).getSound());
         assertFalse(context.getSharedPreferences(OwnerAlerts.PREFS,0).getBoolean("enabled",false));
     }
