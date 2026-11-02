@@ -5,12 +5,31 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApi, MAX_MEDIA_BYTES } from '../server/api.mjs';
 import { localStore } from '../server/local-store.mjs';
+import { createPushService } from '../server/push.mjs';
 import { hashPassword, SESSION_MS } from '../server/auth.mjs';
 
 const origin = 'https://swaggdaddys.com';
 const password = 'test-only-long-password';
 const passwordHash = await hashPassword(password);
 const env = { OWNER_PASSWORD_HASH:passwordHash, OWNER_USERNAME:'owner' };
+test('notification enrollment requires owner authentication and CSRF; saved requests survive push outages',async()=>{
+  const store=localStore();let sends=0;
+  const notifications=createPushService({store,env,sender:{ready:true,send:async()=>{sends++;throw Error('offline');}}});
+  const api=createApi({store,env,notifications});
+  const body={id:'12345678-1234-1234-1234-123456789012',token:'test_token_for_notification_123456'};
+  try{
+    assert.equal((await api(request('/notifications/device',{method:'POST',body}))).status,401);
+    const auth=await login(api);
+    assert.equal((await api(request('/notifications/device',{method:'POST',cookie:auth.cookie,body}))).status,403);
+    assert.equal((await api(request('/notifications/device',{...auth,method:'POST',origin:'https://evil.example',body}))).status,403);
+    assert.equal((await api(request('/notifications/device',{...auth,method:'POST',body}))).status,200);
+    const response=await api(request('/requests',{method:'POST',body:form(fixture({vin:'1HGCM82633A004352'}))}),{ip:'push-test'});
+    assert.equal(response.status,201);assert.equal(sends,1);assert.equal((await store.keys('push-outbox/')).length,1);
+    assert.equal((await store.keys('requests/')).length,1);
+    assert.equal((await api(request('/logout',{...auth,method:'POST',body:{}}))).status,200);
+    assert.equal((await store.keys('push-devices/')).length,0);
+  }finally{store.close();}
+});
 test('owner request lists and details retain every supplied field including raw VIN, specifications and GPS',async()=>{
   const store=localStore();const api=createApi({store,env});
   const vin='1HGCM82633A004352';const specs={year:'2003',make:'HONDA',model:'Accord',cylinders:'6',displacement:'3.0'};
