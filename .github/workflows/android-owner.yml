@@ -119,7 +119,10 @@ jobs:
           KEYSTORE_B64: ${{ secrets.SWAGG_RELEASE_KEYSTORE_B64 }}
           SWAGG_SIGNING_PASSWORD: ${{ secrets.SWAGG_RELEASE_KEY_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_B64" ] || [ -z "$SWAGG_SIGNING_PASSWORD" ]; then echo "::error::Release signing secrets are not set"; exit 1; fi
+          # Report which secret is missing (lengths only, never values).
+          echo "keystore secret: ${#KEYSTORE_B64} chars; password secret: ${#SWAGG_SIGNING_PASSWORD} chars"
+          if [ -z "$KEYSTORE_B64" ]; then echo "::error::SWAGG_RELEASE_KEYSTORE_B64 is empty"; exit 1; fi
+          if [ -z "$SWAGG_SIGNING_PASSWORD" ]; then echo "::error::SWAGG_RELEASE_KEY_PASSWORD is empty"; exit 1; fi
           VERSION=$(sed -n "s/.*versionName '\(.*\)'.*/\1/p" android/app/build.gradle)
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Unreadable versionName"; exit 1; }
           umask 077; KS="$RUNNER_TEMP/owner.p12"; printf '%s' "$KEYSTORE_B64" | base64 -d > "$KS"
