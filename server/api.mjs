@@ -257,7 +257,7 @@ export function createApi({ store, env = process.env, now = Date.now, lensReader
         if(!entry)fail(404,'Request not found.');
         await throttle('manuals-'+digest(auth.key),30,60*1000);
         try{return manualResponse(await findManuals(entry.value));}
-        catch{return manualResponse({vehicle:entry.value.vehicle,specs:entry.value.vehicleSpecs||{},options:[],browseUrl:'https://charm.li/',message:'The automatic manual lookup is temporarily unavailable. Browse CHARM to select this vehicle.'});}
+        catch{return manualResponse({vehicle:entry.value.vehicle,specs:entry.value.vehicleSpecs||{},options:[],browseUrl:'https://lemon-manuals.la/',message:'The automatic manual lookup is temporarily unavailable. Browse LEMON to select this vehicle, or use the CHARM backup.'});}
       }
       const historyMatch = route.match(/^\/vehicles\/([A-HJ-NPR-Z0-9]{17})\/history$/);
       if (historyMatch && request.method === 'GET') {
