@@ -11,6 +11,13 @@ public class NavigationPolicyTest {
         assertEquals(INTERNAL, NavigationPolicy.classify("https://www.swaggdaddys.com/owner/"));
         assertEquals(INTERNAL, NavigationPolicy.classify("https://SWAGGDADDYS.COM:443/owner/"));
     }
+    @Test public void onlyTheOwnerSiteMayAskForLocation() {
+        org.junit.Assert.assertTrue(NavigationPolicy.trustedOrigin("https://swaggdaddys.com/"));
+        org.junit.Assert.assertTrue(NavigationPolicy.trustedOrigin("https://www.swaggdaddys.com"));
+        org.junit.Assert.assertFalse(NavigationPolicy.trustedOrigin("https://evil.example/"));
+        org.junit.Assert.assertFalse(NavigationPolicy.trustedOrigin("http://swaggdaddys.com/"));
+        org.junit.Assert.assertFalse(NavigationPolicy.trustedOrigin(null));
+    }
     @Test public void telephoneAndTextUseSystemApps() {
         assertEquals(CALL, NavigationPolicy.classify("tel:+12054928772"));
         assertEquals(TEXT, NavigationPolicy.classify("sms:+12054928772?body=Hi%20there"));

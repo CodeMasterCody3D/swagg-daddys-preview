@@ -10,6 +10,12 @@ public final class NavigationPolicy {
 
     private NavigationPolicy() { }
 
+    /** Only the owner site may ask for the phone's location (for mileage). */
+    public static boolean trustedOrigin(String origin) {
+        if (origin == null) return false;
+        return classify(origin.endsWith("/") ? origin : origin + "/") == Route.INTERNAL;
+    }
+
     public static Route classify(String value) {
         if (value == null || value.length() > 8192 || value.chars().anyMatch(c -> c < 32)) {
             return Route.BLOCK;

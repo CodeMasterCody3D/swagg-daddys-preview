@@ -18,6 +18,7 @@ import android.view.View;
 import android.view.WindowInsets;
 import android.webkit.CookieManager;
 import android.webkit.SslErrorHandler;
+import android.webkit.GeolocationPermissions;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -39,6 +40,9 @@ import org.json.JSONTokener;
 public final class MainActivity extends Activity {
     private static final int BACKGROUND = Color.rgb(8, 13, 12);
     private static final int MINT = Color.rgb(71, 237, 189);
+    private static final int LOCATION_PERMISSION = 721;
+    private GeolocationPermissions.Callback pendingLocation;
+    private String pendingLocationOrigin;
     private WebView web;
     private ProgressBar progress;
     private LinearLayout errorPanel;
@@ -139,7 +143,8 @@ public final class MainActivity extends Activity {
         settings.setAllowFileAccessFromFileURLs(false);
         settings.setAllowUniversalAccessFromFileURLs(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setGeolocationEnabled(false);
+        // Location is offered only to swaggdaddys.com, for the mileage estimate on a request.
+        settings.setGeolocationEnabled(true);
         settings.setSaveFormData(false);
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
         settings.setMediaPlaybackRequiresUserGesture(true);
@@ -182,6 +187,13 @@ public final class MainActivity extends Activity {
         });
 
         web.setWebChromeClient(new WebChromeClient() {
+            @Override public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
+                if (!NavigationPolicy.trustedOrigin(origin)) { callback.invoke(origin, false, false); return; }
+                if (locationGranted()) { callback.invoke(origin, true, false); return; }
+                pendingLocation = callback; pendingLocationOrigin = origin;
+                requestPermissions(new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION,
+                        android.Manifest.permission.ACCESS_COARSE_LOCATION}, LOCATION_PERMISSION);
+            }
             @Override public void onProgressChanged(WebView view, int value) {
                 progress.setProgress(value);
                 if (value == 100) progress.setVisibility(View.GONE);
@@ -354,8 +366,16 @@ public final class MainActivity extends Activity {
         if (updates != null) updates.resume();
     }
 
+    private boolean locationGranted() {
+        return checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                || checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+    }
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == LOCATION_PERMISSION && pendingLocation != null) {
+            pendingLocation.invoke(pendingLocationOrigin, locationGranted(), false);
+            pendingLocation = null; pendingLocationOrigin = null;
+        }
         if(requestCode==OwnerPushController.PERMISSION && push!=null)
             push.permissionResult(results.length>0 && results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED);
     }
