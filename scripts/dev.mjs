@@ -25,6 +25,7 @@ publicFiles.add('/owner/vehicle-research.js');
 publicFiles.add('/owner/app-updates.js');
 publicFiles.add('/owner/app-updates-core.js');
 publicFiles.add('/vin-live.js');
+publicFiles.add('/vin-camera.js');
 publicFiles.add('/owner/manuals.js');
 publicFiles.add('/owner/manuals.css');
 const types = { '.json':'application/json', '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.webp':'image/webp', '.wasm':'application/wasm', '.gz':'application/gzip', '.txt':'text/plain' };
