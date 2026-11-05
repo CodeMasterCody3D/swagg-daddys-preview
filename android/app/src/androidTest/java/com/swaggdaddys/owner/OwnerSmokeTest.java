@@ -45,7 +45,11 @@ public class OwnerSmokeTest {
     @Test public void appReportsItsVersionAndCanVerifyItsOwnSignedPackage() {
         activity.getScenario().onActivity(owner -> {
             WebView web = findWeb(owner.getWindow().getDecorView());
-            assertTrue(web.getSettings().getUserAgentString().contains("SwaggDaddysOwner/1.0.6 (build:7)"));
+            try {
+                android.content.pm.PackageInfo installed = owner.getPackageManager().getPackageInfo(owner.getPackageName(), 0);
+                String expected = "SwaggDaddysOwner/" + installed.versionName + " (build:" + installed.getLongVersionCode() + ")";
+                assertTrue(web.getSettings().getUserAgentString().contains(expected));
+            } catch (android.content.pm.PackageManager.NameNotFoundException error) { throw new AssertionError(error); }
             assertNull(OwnerUpdateController.validatePackage(owner, new java.io.File(owner.getApplicationInfo().sourceDir)));
             try {
                 String[] permissions = owner.getPackageManager().getPackageInfo(owner.getPackageName(), android.content.pm.PackageManager.GET_PERMISSIONS).requestedPermissions;
