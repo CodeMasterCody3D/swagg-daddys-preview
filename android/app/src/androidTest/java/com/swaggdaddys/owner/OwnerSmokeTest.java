@@ -37,7 +37,7 @@ public class OwnerSmokeTest {
             assertEquals(NavigationPolicy.HOME, web.getUrl());
             assertTrue(web.getSettings().getJavaScriptEnabled());
             assertFalse(web.getSettings().getAllowFileAccess());
-            assertFalse(web.getSettings().getAllowContentAccess());
+            assertTrue(web.getSettings().getAllowContentAccess()); // System-picked VIN photos.
             assertFalse(CookieManager.getInstance().acceptThirdPartyCookies(web));
         });
     }
@@ -54,6 +54,8 @@ public class OwnerSmokeTest {
             try {
                 String[] permissions = owner.getPackageManager().getPackageInfo(owner.getPackageName(), android.content.pm.PackageManager.GET_PERMISSIONS).requestedPermissions;
                 assertTrue(java.util.Arrays.asList(permissions).contains("android.permission.REQUEST_INSTALL_PACKAGES"));
+                assertTrue(java.util.Arrays.asList(permissions).contains("android.permission.CAMERA"));
+                assertFalse(java.util.Arrays.asList(permissions).contains("android.permission.RECORD_AUDIO"));
             } catch (Exception error) { throw new AssertionError(error); }
         });
     }

@@ -17,6 +17,8 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
 import android.webkit.CookieManager;
+import android.webkit.PermissionRequest;
+import android.webkit.ValueCallback;
 import android.webkit.SslErrorHandler;
 import android.webkit.GeolocationPermissions;
 import android.webkit.WebChromeClient;
@@ -41,6 +43,10 @@ public final class MainActivity extends Activity {
     private static final int BACKGROUND = Color.rgb(8, 13, 12);
     private static final int MINT = Color.rgb(71, 237, 189);
     private static final int LOCATION_PERMISSION = 721;
+    private static final int CAMERA_PERMISSION = 722;
+    private static final int VIN_PHOTO = 723;
+    private PermissionRequest pendingCamera;
+    private ValueCallback<Uri[]> pendingPhoto;
     private GeolocationPermissions.Callback pendingLocation;
     private String pendingLocationOrigin;
     private WebView web;
@@ -139,7 +145,8 @@ public final class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(false);
+        // The system image picker grants access only to user-selected content URIs.
+        settings.setAllowContentAccess(true);
         settings.setAllowFileAccessFromFileURLs(false);
         settings.setAllowUniversalAccessFromFileURLs(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -187,6 +194,30 @@ public final class MainActivity extends Activity {
         });
 
         web.setWebChromeClient(new WebChromeClient() {
+            @Override public void onPermissionRequest(PermissionRequest request) {
+                if (!CameraPolicy.allowed(request.getOrigin().toString(), web.getUrl(), request.getResources())) {
+                    request.deny(); return;
+                }
+                if (pendingCamera != null) pendingCamera.deny();
+                pendingCamera = request;
+                if (checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    finishCameraRequest();
+                } else requestPermissions(new String[]{android.Manifest.permission.CAMERA}, CAMERA_PERMISSION);
+            }
+            @Override public void onPermissionRequestCanceled(PermissionRequest request) {
+                if (pendingCamera == request) pendingCamera = null;
+            }
+            @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (!NavigationPolicy.trustedOrigin(view.getUrl())) return false;
+                if (pendingPhoto != null) pendingPhoto.onReceiveValue(null);
+                pendingPhoto = callback;
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("image/*");
+                try { startActivityForResult(intent, VIN_PHOTO); }
+                catch (ActivityNotFoundException error) { pendingPhoto = null; callback.onReceiveValue(null); }
+                return true;
+            }
             @Override public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
                 if (!NavigationPolicy.trustedOrigin(origin)) { callback.invoke(origin, false, false); return; }
                 if (locationGranted()) { callback.invoke(origin, true, false); return; }
@@ -366,12 +397,35 @@ public final class MainActivity extends Activity {
         if (updates != null) updates.resume();
     }
 
+    private void finishCameraRequest() {
+        PermissionRequest request = pendingCamera;
+        pendingCamera = null;
+        if (request == null) return;
+        if (!destroyed && web != null
+                && checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                && CameraPolicy.allowed(request.getOrigin().toString(), web.getUrl(), request.getResources())) {
+            request.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
+        } else request.deny();
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == VIN_PHOTO && pendingPhoto != null) {
+            ValueCallback<Uri[]> callback = pendingPhoto; pendingPhoto = null;
+            Uri uri = resultCode == RESULT_OK && data != null ? data.getData() : null;
+            if (uri != null && !"content".equals(uri.getScheme())) uri = null;
+            if (destroyed || web == null || !NavigationPolicy.trustedOrigin(web.getUrl())) uri = null;
+            callback.onReceiveValue(uri == null ? null : new Uri[]{uri});
+        }
+    }
+
     private boolean locationGranted() {
         return checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
                 || checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED;
     }
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == CAMERA_PERMISSION) finishCameraRequest();
         if (requestCode == LOCATION_PERMISSION && pendingLocation != null) {
             pendingLocation.invoke(pendingLocationOrigin, locationGranted(), false);
             pendingLocation = null; pendingLocationOrigin = null;
@@ -388,6 +442,8 @@ public final class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         destroyed = true;
+        if (pendingCamera != null) { pendingCamera.deny(); pendingCamera = null; }
+        if (pendingPhoto != null) { pendingPhoto.onReceiveValue(null); pendingPhoto = null; }
         if (push != null) push.destroy();
         if (updates != null) updates.destroy();
         if (web != null) {

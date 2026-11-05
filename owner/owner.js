@@ -1,3 +1,5 @@
+import { mountVinScanner } from '../vin-controller.js';
+import { vinWidget } from '../vin-widget.js';
 import { mountAppUpdates } from './app-updates.js';
 import { mountVehicleResearch } from './vehicle-research.js';
 import { mountManuals } from './manuals.js';
@@ -29,11 +31,25 @@ function ownerSection(section=false) {
     $(name + '-tab').setAttribute('aria-pressed', String(selected === name));
     $(name + '-tab').classList.toggle('secondary', selected !== name);
   }
+  if (selected !== 'tools') ownerScanner?.stop();
   if (selected === 'invoices') invoiceList.show(); else invoiceList.hide();
 }
 const invoices=mountInvoiceEditor({api,onSaved:()=>invoiceList.saved()});
 const invoiceList=mountInvoiceList({api,editor:invoices});
 const manuals=mountManuals($('manual-finder'),{api,apiBase,onShow:()=>ownerSection(true),onUnauthorized:()=>signedOut()});
+const vinHost=$('owner-vin-widget');
+vinHost.innerHTML=vinWidget+'<input id="vehicle" type="hidden"><div id="request-result" hidden></div>';
+const ownerScanner=mountVinScanner(vinHost,{
+  lookupVehicle:async(vin,{signal}={})=>{
+    const result=await api('/manuals/vin/'+encodeURIComponent(vin),{signal});
+    return {specs:{year:result.year,make:result.make,model:result.model,trim:result.trim||'',displacement:result.displacement||''},vehicle:result.vehicle,complete:Boolean(result.year&&result.make&&result.model),clean:result.clean};
+  },
+  onConfirmed:(decoded,vin)=>{
+    $('owner-vin-result').textContent=decoded.vehicle+' · '+vin;
+    manuals.openVehicle({...decoded.specs,text:decoded.vehicle});
+  }
+});
+$('owner-vin-scan').addEventListener('click',()=>{vinHost.closest('details').open=true;void ownerScanner.open();});
 // Opens the Tools finder at this request's vehicle (make/year, model filtered, VIN engine highlighted).
 function openManuals(item){$('customer-dialog').close();ownerSection(true);manuals.openVehicle({...(item.vehicleSpecs||{}),text:item.vehicle||''});}
 $('invoices-tab').addEventListener('click',()=>ownerSection('invoices'));

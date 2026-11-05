@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="invoice.css">
   <script src="../site-config.js" defer></script>
   <script src="owner.js" type="module"></script>
+<link rel="stylesheet" href="../vin-widget.css">
 </head>
 <body>
   <main class="shell">
@@ -58,6 +59,9 @@
         <p class="eyebrow">TOOLS</p>
         <h2 id="owner-tools-title">Repair manuals</h2>
         <p class="muted">Type the year, make and model, or a VIN. Then search the manual for the job.</p>
+        <button id="owner-vin-scan" class="button" type="button">Live scan VIN</button>
+        <p id="owner-vin-result" role="status" aria-live="polite"></p>
+        <details class="job-tools"><summary>VIN photo, retry and scan details</summary><div id="owner-vin-widget" class="vin-owner-widget"></div></details>
         <div id="manual-finder"></div>
         <details class="job-tools">
           <summary>Vehicle research · VIN, recalls, ratings and history checks</summary>

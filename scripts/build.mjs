@@ -3,7 +3,7 @@ import { cp, mkdir, rm } from 'node:fs/promises';
 // Only browser assets are published. Server code, tests, and local data stay out of the static directory.
 await rm('public', { recursive: true, force: true });
 await mkdir('public');
-for (const name of ['index.html','privacy.html','invoice.html','invoice.css','invoice-render.js','invoice-view.js','assets','owner','manuals-data','site-config.js','intake.js','text-helper.js','request-location.js','media.js','vin.js','vin-core.js','vin-scan.js','vin-lens.js','vin-reader.js','vin-barcode-scale.js','vin-camera.js','vin-repair.js']) await cp(name, 'public/' + name, { recursive: true });
+for (const name of ['index.html','privacy.html','invoice.html','invoice.css','invoice-render.js','invoice-view.js','assets','owner','manuals-data','site-config.js','intake.js','text-helper.js','request-location.js','media.js','vin.js','vin-controller.js','vin-vehicle.js','vin-widget.js','vin-widget.css','vin-core.js','vin-scan.js','vin-lens.js','vin-reader.js','vin-barcode-scale.js','vin-camera.js','vin-repair.js']) await cp(name, 'public/' + name, { recursive: true });
 await scannerAssets();
 await cp('vin-live.js','public/vin-live.js');
 console.log('Built public customer site and owner dashboard.');
