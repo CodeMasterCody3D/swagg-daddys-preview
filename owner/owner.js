@@ -46,7 +46,9 @@ const ownerScanner=mountVinScanner(vinHost,{
   },
   onConfirmed:(decoded,vin)=>{
     $('owner-vin-result').textContent=decoded.vehicle+' · '+vin;
+    vinHost.closest('details').open=false;
     manuals.openVehicle({...decoded.specs,text:decoded.vehicle});
+    $('manual-finder').scrollIntoView({block:'start',behavior:'auto'});
   }
 });
 $('owner-vin-scan').addEventListener('click',()=>{vinHost.closest('details').open=true;void ownerScanner.open();});

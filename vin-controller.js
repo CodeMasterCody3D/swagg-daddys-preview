@@ -9,7 +9,7 @@ import { lookupVinVehicle, confirmedVinVehicle } from './vin-vehicle.js';
 export function mountVinScanner(root=document,{lookupVehicle=lookupVinVehicle,onConfirmed=()=>{},createScanner=createLiveVinScanner,readPhotoImpl=readVinPhoto}={}) {
 const $ = id => root.querySelector('#'+id);
 const form=root.querySelector('#service-form');
-const setStatus=(message,error=false)=>{status.textContent=message;status.classList.toggle('vin-error',error);};
+const setStatus=(message,error=false)=>{status.textContent=message;status.classList.toggle('vin-error',error);if(error&&!$('vin-live-tools').open)status.scrollIntoView({block:'nearest',behavior:'auto'});};
 const input = $('vin'), status = $('vin-status'), lookup = $('vin-lookup');
 const scanSource=$('vin-scan-source');
 // The wrapper uses Android’s image picker; live Take photo still captures the camera.
@@ -156,7 +156,7 @@ async function selectPhoto(event) {
   for(const id of ['vin-photo-button','vin-upload-button','vin-retry','vin-clear-photo'])$(id).disabled=true;
   try {
     const nextPhoto=await photoCanvas(file);if(current!==scanId)return;
-    sourcePhoto=nextPhoto;crop=null;drawPhoto();$('vin-photo-tools').hidden=false;$('vin-crop-status').textContent='Full photo selected. Drag around the VIN if a retry is needed.';scanBusy=false;await readPhoto();
+    sourcePhoto=nextPhoto;crop=null;drawPhoto();$('vin-photo-tools').hidden=false;$('vin-crop-status').textContent='Full photo selected. Drag around the VIN if a retry is needed.';$('vin-photo-tools').scrollIntoView({block:'center',behavior:'auto'});scanBusy=false;await readPhoto();
   } catch(error){setStatus('Try again. '+error.message,true);}
   finally {scanBusy=false;for(const id of ['vin-photo-button','vin-upload-button','vin-retry','vin-clear-photo'])$(id).disabled=false;}
 }
@@ -178,7 +178,7 @@ $('vin-live-stop').addEventListener('click',()=>cancelScan('Camera stopped. You 
 $('vin-camera-fallback').addEventListener('click',()=>{stopLive();$('vin-photo').click();});
 $('vin-live-capture').addEventListener('click',async()=>{
   if(scanBusy||!liveScanner.active)return;
-  try{const frame=liveScanner.capture();stopLive();sourcePhoto=frame;crop=null;drawPhoto();$('vin-photo-tools').hidden=false;$('vin-crop-status').textContent='Photo captured from the live camera. Drag around the VIN if a retry is needed.';await readPhoto();}
+  try{const frame=liveScanner.capture();stopLive();sourcePhoto=frame;crop=null;drawPhoto();$('vin-photo-tools').hidden=false;$('vin-crop-status').textContent='Photo captured from the live camera. Drag around the VIN if a retry is needed.';$('vin-photo-tools').scrollIntoView({block:'center',behavior:'auto'});await readPhoto();}
   catch(error){$('vin-live-status').textContent=cameraErrorMessage(error);}
 });
 $('vin-upload-button').addEventListener('click',()=>{stopLive();$('vin-upload').click();});
@@ -197,7 +197,7 @@ async function applyScannedVin(value,method='') {
   clearDecode();input.value=vin;
   if(!validVin(vin)){setStatus('Try again. Read all 17 VIN characters.',true);return false;}
   const decoded=await decode(true);
-  if(!decoded)return false;
+  if(!decoded){if(sourcePhoto){$('vin-retry-status').append(status);status.scrollIntoView({block:'nearest',behavior:'auto'});}return false;}
   stopLive();clearPhoto();
   scanSource.textContent=method==='live-text'?'VIN read from the printed label. Please check every character.':method==='live-barcode'?'VIN read from the barcode.':method==='barcode'?'VIN read from the barcode.':method==='google-lens'?(barcodeCheck?.status==='unavailable'?'Google Lens used because the barcode reader could not run.':'VIN read by Google Lens after the barcode checks.'):method==='text'?'VIN read from the printed label. Please check every character.':'';
   input.scrollIntoView({block:'center',behavior:'auto'});
