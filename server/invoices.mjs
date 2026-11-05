@@ -2,7 +2,7 @@
 // The owner edits it in the dashboard; the customer sees it through a private link
 // (/invoice.html?t=<token>) that the owner texts them. Money is stored in cents and
 // every total is recomputed here, so the page cannot send a wrong total.
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 export const BUSINESS = {
   name:'Swagg Daddys Mobile Mechanics', phone:'205-492-8772', email:'admin@swaggdaddys.com', website:'swaggdaddys.com'
@@ -12,6 +12,12 @@ export const DEFAULTS = {
   terms:'Payment is due when the work is completed unless agreed otherwise. Parts carry the manufacturer’s warranty; customer-supplied parts are not covered. Recommended work listed on this invoice was not performed unless it appears in the work completed.'
 };
 export const STATUSES = ['Draft','Sent','Paid','Void'];
+export function invoiceGroup(invoice) {
+  if (invoice.status === 'Void') return 'void';
+  if (invoice.status === 'Draft') return 'new';
+  if (invoice.status === 'Paid' || (invoice.totals.total > 0 && invoice.totals.balance === 0)) return 'paid';
+  return 'unpaid';
+}
 const tokenPattern = /^[a-f0-9]{32}$/;
 
 const str = (value, max) => typeof value === 'string' ? value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g,'').trim().slice(0,max) : '';
@@ -88,7 +94,39 @@ export function createInvoices({ store, now = Date.now }) {
     }
     throw new Error('Invoice number unavailable');
   }
-  return {
+  const service = {
+    async list({ view = 'new', query = '', before = '' } = {}) {
+      const keys = await store.keys('invoices/');
+      const saved = [];
+      // Bound concurrent storage reads; existing request invoices need no migration.
+      for (let offset = 0; offset < keys.length; offset += 20) {
+        const entries = await Promise.all(keys.slice(offset, offset + 20).map(async key => {
+          const entry = await store.get(key);
+          if (!entry) return null;
+          const invoice = entry.value;
+          return { id:key.slice('invoices/'.length), number:invoice.number, status:invoice.status,
+            date:invoice.date, createdAt:invoice.createdAt, updatedAt:invoice.updatedAt,
+            customer:invoice.customer, vehicle:invoice.vehicle, totals:totals(invoice) };
+        }));
+        saved.push(...entries.filter(Boolean));
+      }
+      const counts = { new:0, unpaid:0, paid:0, void:0 };
+      for (const invoice of saved) counts[invoiceGroup(invoice)]++;
+      const matches = saved.filter(invoice => invoiceGroup(invoice) === view &&
+        (!query || [invoice.number, invoice.customer?.name, invoice.customer?.phone, invoice.vehicle?.description, invoice.vehicle?.vin].join(' ').toLowerCase().includes(query.toLowerCase())))
+        .sort((a,b) => (b.createdAt || '').localeCompare(a.createdAt || '') || b.id.localeCompare(a.id));
+      const offset = before ? matches.findIndex(invoice => invoice.id === before) + 1 : 0;
+      const items = matches.slice(offset, offset + 30);
+      return { items, counts, next:offset + items.length < matches.length ? items.at(-1).id : null };
+    },
+    async read(id) {
+      const entry = await store.get('invoices/' + id);
+      return entry ? { ...entry.value, id, revision:entry.etag, saved:true } : null;
+    },
+    draft() { return { ...draftInvoice({}, now()), saved:false }; },
+    async create(input) {
+      return service.save({ id:String(now()) + '-' + randomUUID() }, input);
+    },
     async get(request) {
       const entry = await store.get('invoices/' + request.id);
       return entry ? { ...entry.value, revision:entry.etag, saved:true } : { ...draftInvoice(request, now()), saved:false };
@@ -103,7 +141,7 @@ export function createInvoices({ store, now = Date.now }) {
       invoice.updatedAt = new Date(now()).toISOString();
       if (!invoice.token) { invoice.token = randomBytes(16).toString('hex'); await store.put('invoice-tokens/' + invoice.token, { id:request.id }); }
       if (!await store.put(key, invoice, entry?.etag)) return { conflict:true };
-      return { invoice:{ ...invoice, revision:(await store.get(key)).etag, saved:true } };
+      return { invoice:{ ...invoice, id:request.id, revision:(await store.get(key)).etag, saved:true } };
     },
     // The customer's view: no internal ids, just the invoice and the business details.
     async byToken(token) {
@@ -115,4 +153,5 @@ export function createInvoices({ store, now = Date.now }) {
       return { ...invoice, business:BUSINESS };
     }
   };
+  return service;
 }

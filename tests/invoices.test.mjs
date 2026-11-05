@@ -68,3 +68,62 @@ test('owner-only editing with CSRF, sequential numbers, private customer link, v
     assert.equal((await req('/invoice/' + saved.token)).status, 404, 'a voided invoice link stops working');
   } finally { store.close(); }
 });
+
+test('invoice section lists existing and standalone invoices by payment state, with search and pagination', async () => {
+  const { createInvoices } = await import('../server/invoices.mjs');
+  const store = localStore(); let clock = Date.UTC(2026, 10, 5);
+  const invoices = createInvoices({ store, now:() => clock++ });
+  try {
+    const draft = await invoices.save({ id:'1793458800000-00000000-0000-4000-8000-0000000000aa' }, { customer:{name:'Jordan'}, status:'Draft', fees:[{description:'Diagnostic',amount:65}] });
+    const unpaid = await invoices.create({ customer:{name:'Casey'}, status:'Sent', fees:[{description:'Diagnostic',amount:65}], paid:20 });
+    await invoices.create({ customer:{name:'Paid customer'}, status:'Paid', fees:[{description:'Diagnostic',amount:65}], paid:65 });
+    await invoices.create({ customer:{name:'Settled customer'}, status:'Sent', fees:[{description:'Diagnostic',amount:65}], paid:65 });
+    await invoices.create({ customer:{name:'Voided customer'}, status:'Void' });
+    assert.deepEqual((await invoices.list()).counts, {new:1, unpaid:1, paid:2, void:1});
+    const listed = await invoices.list({view:'unpaid',query:'CASEY'});
+    assert.equal(listed.items[0].id, unpaid.invoice.id);
+    assert.equal(listed.items[0].totals.balance, 4500);
+    assert.equal(listed.items[0].token, undefined, 'private invoice links are not in list summaries');
+    assert.equal(listed.items[0].revision, undefined);
+    assert.equal((await invoices.list({query:draft.invoice.number})).items[0].id, draft.invoice.id);
+    assert.equal((await invoices.list({view:'paid'})).items.length, 2);
+    for(let i=0;i<32;i++) await invoices.create({customer:{name:'Draft '+i}});
+    const page = await invoices.list();
+    assert.equal(page.items.length, 30); assert.ok(page.next);
+    const rest = await invoices.list({before:page.next});
+    assert.equal(rest.items.length, 3); assert.equal(rest.next, null);
+    assert.equal(new Set([...page.items,...rest.items].map(i=>i.id)).size,33);
+  } finally { store.close(); }
+});
+
+test('direct invoice API requires owner authentication and CSRF, supports new invoices and status changes without requests', async () => {
+  const store=localStore(), api=createApi({store,env});
+  const req=(path,{method='GET',cookie,csrf,body}={})=>api(new Request(origin+'/api'+path,{method,
+    headers:{...(method!=='GET'?{Origin:origin}:{}),...(cookie?{Cookie:cookie}:{}),...(csrf?{'X-CSRF-Token':csrf}:{}),...(body?{'Content-Type':'application/json'}:{})},
+    body:body?JSON.stringify(body):undefined}),{ip:'direct-invoice-test'});
+  try {
+    for(const path of ['/invoices','/invoices/new']) assert.equal((await req(path)).status,401);
+    const login=await req('/login',{method:'POST',body:{username:'owner',password}});
+    const cookie=login.headers.get('set-cookie').split(';')[0],{csrf}=await login.json();
+    const draft=await(await req('/invoices/new',{cookie})).json(); assert.equal(draft.saved,false);
+    assert.equal((await req('/invoices',{method:'POST',cookie,body:draft})).status,403);
+    const created=await req('/invoices',{method:'POST',cookie,csrf,body:{...draft,customer:{name:'Standalone customer'},fees:[{description:'Repair',amount:100}]}});
+    assert.equal(created.status,201); const invoice=await created.json();
+    assert.equal((await store.keys('requests/')).length,0,'standalone invoices do not create fake service requests');
+    assert.equal((await req('/invoices/'+invoice.id)).status,401);
+    assert.equal((await req('/invoices/'+invoice.id,{method:'PUT',cookie,body:invoice})).status,403);
+    assert.equal((await req('/invoices/'+invoice.id,{cookie})).status,200);
+    const sent=await(await req('/invoices/'+invoice.id,{method:'PUT',cookie,csrf,body:{...invoice,status:'Sent',fees:[{description:'Repair',amount:100}]}})).json();
+    assert.equal((await(await req('/invoices?view=new',{cookie})).json()).items.length,0);
+    assert.equal((await(await req('/invoices?view=unpaid',{cookie})).json()).items[0].id,invoice.id);
+    assert.equal((await req('/invoices/'+invoice.id,{method:'PUT',cookie,csrf,body:invoice})).status,409);
+    const paid=await req('/invoices/'+invoice.id,{method:'PUT',cookie,csrf,body:{...sent,status:'Paid',paid:100,fees:[{description:'Repair',amount:100}]}});
+    assert.equal(paid.status,200);
+    assert.equal((await(await req('/invoices?view=paid',{cookie})).json()).items[0].totals.balance,0);
+    assert.equal((await req('/invoices?view=wrong',{cookie})).status,400);
+    assert.equal((await req('/invoices?before=bad',{cookie})).status,400);
+    assert.equal((await req('/invoices/1793458800000-00000000-0000-4000-8000-0000000000ff',{cookie})).status,404);
+    await store.put('requests/'+invoice.id,{id:invoice.id,deletedAt:new Date().toISOString()});
+    assert.equal((await req('/invoices/'+invoice.id,{cookie})).status,200,'invoices remain accessible when their request is in Trash');
+  } finally {store.close();}
+});

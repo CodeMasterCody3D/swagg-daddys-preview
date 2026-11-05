@@ -39,7 +39,21 @@
       <p class="small muted">Owner access only. There is no public account signup.</p>
     </section>
     <section id="inbox" hidden>
-      <nav class="owner-tabs" aria-label="Owner sections"><button id="requests-tab" type="button" class="button compact" aria-pressed="true" aria-controls="requests-view">Requests</button><button id="tools-tab" type="button" class="button secondary compact" aria-pressed="false" aria-controls="owner-tools">Tools</button></nav>
+      <nav class="owner-tabs" aria-label="Owner sections"><button id="requests-tab" type="button" class="button compact" aria-pressed="true" aria-controls="requests-view">Requests</button><button id="invoices-tab" type="button" class="button secondary compact" aria-pressed="false" aria-controls="invoices-view">Invoices</button><button id="tools-tab" type="button" class="button secondary compact" aria-pressed="false" aria-controls="owner-tools">Tools</button><button class="button secondary compact" id="sign-out" type="button">Sign out</button></nav>
+      <section id="invoices-view" aria-labelledby="invoices-title" hidden>
+        <div class="toolbar"><div><p class="eyebrow">BILLING</p><h2 id="invoices-title">Invoices</h2></div><div class="toolbar-actions"><button id="invoice-refresh" type="button" class="button secondary compact">Refresh invoices</button><button id="invoice-create" type="button" class="button compact">+ New invoice</button></div></div>
+        <nav id="invoice-filters" class="invoice-filters" aria-label="Invoice status">
+          <button type="button" class="button compact" data-view="new" aria-pressed="true">New <span data-count="new">0</span></button>
+          <button type="button" class="button secondary compact" data-view="unpaid" aria-pressed="false">Unpaid <span data-count="unpaid">0</span></button>
+          <button type="button" class="button secondary compact" data-view="paid" aria-pressed="false">Paid <span data-count="paid">0</span></button>
+          <button type="button" class="button secondary compact" data-view="void" aria-pressed="false">Voided <span data-count="void">0</span></button>
+        </nav>
+        <label for="invoice-search">Find an invoice</label><input id="invoice-search" type="search" placeholder="Invoice number, customer, phone, vehicle or VIN…" maxlength="120" autocomplete="off">
+        <p id="invoice-list-notice" class="notice" role="status" aria-live="polite"></p>
+        <div id="invoice-list" class="cards invoice-list"></div>
+        <p id="invoice-empty" class="panel empty" hidden></p>
+        <button id="invoice-more" type="button" class="button secondary more" hidden>Load more invoices</button>
+      </section>
       <section id="owner-tools" class="panel" aria-labelledby="owner-tools-title" hidden>
         <p class="eyebrow">TOOLS</p>
         <h2 id="owner-tools-title">Repair manuals</h2>
@@ -51,7 +65,7 @@
         </details>
       </section>
       <section id="requests-view" aria-label="Service requests">
-      <div class="toolbar"><h2><span id="inbox-title">Service requests</span> <span id="count" class="count"></span></h2><div class="toolbar-actions"><button class="button secondary compact" id="refresh">Refresh</button><button class="button secondary compact" id="sign-out">Sign out</button></div></div>
+      <div class="toolbar"><h2><span id="inbox-title">Service requests</span> <span id="count" class="count"></span></h2><div class="toolbar-actions"><button class="button secondary compact" id="refresh">Refresh</button></div></div>
       <div class="view-switch"><label for="inbox-view">Show</label><select id="inbox-view"><option value="active">Active requests</option><option value="trash">Trash</option></select></div>
       <div class="filters"><div><label for="search">Find a customer</label><input id="search" type="search" placeholder="Name, phone, vehicle, VIN…" autocomplete="off"></div><div><label for="status-filter">Status</label><select id="status-filter"><option value="">All statuses</option></select></div></div>
       <div class="stats" id="stats"></div>

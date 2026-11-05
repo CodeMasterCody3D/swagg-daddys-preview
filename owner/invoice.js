@@ -34,11 +34,11 @@ export function invoiceText(invoice, link) {
 }
 const smsTo = (number, body) => 'sms:' + number + (/iPad|iPhone|iPod/.test(navigator.userAgent) ? '&' : '?') + 'body=' + encodeURIComponent(body);
 
-export function mountInvoiceEditor({ api }) {
+export function mountInvoiceEditor({ api, onSaved = () => {} }) {
   const dialog = el('dialog', { className:'invoice-dialog', id:'invoice-dialog' });
   dialog.setAttribute('aria-labelledby', 'invoice-title');
   document.body.append(dialog);
-  let request = null, invoice = null;
+  let request = null, invoice = null, generation = 0, saving = false;
   const milesByRequest = new Map(); // filled by the request screen's "Miles from my location"
 
   const field = (label, input, cls = '') => { const id = 'inv-' + Math.random().toString(36).slice(2, 9); input.id = id; return el('div', { className:'inv-field ' + cls }, el('label', { htmlFor:id, textContent:label }), input); };
@@ -103,7 +103,7 @@ export function mountInvoiceEditor({ api }) {
       fees:inv.fees.map(r => ({ ...r, amount:r.amount / 100 })), discount:inv.discount / 100, paid:inv.paid / 100 };
   };
 
-  let preview, totalLine, statusLine, textButton, linkRow;
+  let preview, totalLine, statusLine, textButton, linkRow, saveButton;
   function update() {
     const inv = fromForm();
     preview.innerHTML = renderInvoice(inv);
@@ -112,13 +112,23 @@ export function mountInvoiceEditor({ api }) {
   const link = () => invoice?.token ? location.origin + '/invoice.html?t=' + invoice.token : '';
 
   async function save(message = 'Invoice saved.') {
+    if (saving) return false;
+    saving = true;
+    const current = generation;
+    saveButton.disabled = true; textButton.disabled = true;
     statusLine.textContent = 'Saving…';
     const rate = form.labor.find(r => r.rate)?.rate; if (rate) store(RATE_KEY, rate);
     try {
-      invoice = await api('/requests/' + encodeURIComponent(request.id) + '/invoice', { method:'PUT', body:JSON.stringify(payload()) });
+      const path = request.direct ? (request.id ? '/invoices/' + encodeURIComponent(request.id) : '/invoices') : '/requests/' + encodeURIComponent(request.id) + '/invoice';
+      const result = await api(path, { method:request.id ? 'PUT' : 'POST', body:JSON.stringify(payload()) });
+      if (current !== generation) return false;
+      invoice = result;
+      request.id = invoice.id || request.id;
       form.status = invoice.status; build(); statusLine.textContent = message;
+      onSaved(invoice);
       return true;
-    } catch (error) { statusLine.textContent = error.message; return false; }
+    } catch (error) { if (current === generation) statusLine.textContent = error.message; return false; }
+    finally { saving = false; if (current === generation) { saveButton.disabled = false; textButton.disabled = false; } }
   }
 
   function build() {
@@ -164,7 +174,7 @@ export function mountInvoiceEditor({ api }) {
 
     totalLine = el('p', { className:'inv-total-line' });
     statusLine = el('p', { className:'small muted inv-status-line' }); statusLine.setAttribute('role', 'status');
-    const saveButton = el('button', { type:'button', className:'button', textContent:'Save invoice' });
+    saveButton = el('button', { type:'button', className:'button', textContent:'Save invoice' });
     saveButton.addEventListener('click', () => void save());
     textButton = el('button', { type:'button', className:'button secondary', textContent:'Text invoice to customer' });
     textButton.addEventListener('click', async () => {
@@ -189,13 +199,27 @@ export function mountInvoiceEditor({ api }) {
   }
 
   return {
+    reset() { generation++; request = null; invoice = null; form = null; milesByRequest.clear(); dialog.close(); dialog.replaceChildren(); },
+    create() { return this.open({ direct:true }); },
+    openSaved(id) { return this.open({ id, direct:true }); },
     setMiles(id, value) { milesByRequest.set(id, String(value)); },
     async open(item) {
+      const current = ++generation;
       request = item; form = null;
       dialog.replaceChildren(el('p', { className:'notice', textContent:'Loading invoice…' }));
       if (!dialog.open) dialog.showModal();
-      try { invoice = await api('/requests/' + encodeURIComponent(item.id) + '/invoice'); build(); }
-      catch (error) { dialog.replaceChildren(el('p', { className:'notice error', textContent:error.message })); }
+      try {
+        const path = item.direct ? (item.id ? '/invoices/' + encodeURIComponent(item.id) : '/invoices/new') : '/requests/' + encodeURIComponent(item.id) + '/invoice';
+        const result = await api(path);
+        if (current !== generation) return;
+        invoice = result; build();
+      }
+      catch (error) {
+        if (current !== generation) return;
+        const close = el('button', { type:'button', className:'button secondary', textContent:'Close invoice' });
+        close.addEventListener('click', () => dialog.close());
+        dialog.replaceChildren(el('p', { className:'notice error', textContent:error.message }), close);
+      }
     }
   };
 }

@@ -39,6 +39,8 @@ Owner app 1.0.6 turns on WebView location for swaggdaddys.com only (`NavigationP
 
 ## Invoices
 
+The owner dashboard has an **Invoices** section with **New** (drafts), **Unpaid** (sent invoices with a balance), **Paid**, and **Voided** views. Search by invoice number, customer, phone, vehicle or VIN and open the editor directly. **New invoice** creates a standalone invoice without adding a service request. Existing request invoices appear automatically, including invoices whose requests are in Trash. Lists are authenticated, paginated, and omit private customer-link tokens.
+
 Each request has **Create or edit invoice** in the owner app. The editor has status (Draft, Sent, Paid, Void), date, bill-to, vehicle (description, VIN, odometer), customer concern, work performed, and line items for labor (hours × rate; the last rate is remembered on the phone), parts (part no., qty × unit price) and fees. The fees start with the $65 diagnostic fee, and **Add mileage fee** turns driving miles into "first 30 included, $2.00/mi after". It also has discount, sales tax on parts only (starts at 10%, editable per invoice, 0–20%), amount paid with payment method, recommended service, and terms. A live preview of the finished invoice updates as you type.
 
 Saving assigns the next number (`SD-<year>-0001`, restarting each year) and a private 128-bit link, `/invoice.html?t=<token>`. **Text invoice to customer** saves the invoice, marks a draft as Sent, and opens Messages to the customer with the link, total and balance. The customer page shows a printable white invoice with the logo, 205-492-8772, admin@swaggdaddys.com and swaggdaddys.com, plus **Print or save PDF**. Setting the status to Void turns the link off.

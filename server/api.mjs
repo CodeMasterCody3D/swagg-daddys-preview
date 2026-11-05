@@ -318,6 +318,28 @@ export function createApi({ store, invoices = null, routeMiles = drivingMiles, e
         await throttle('route-' + digest(auth.key), 30, 60 * 1000);
         return json(await routeMiles(from, to));
       }
+      // Direct owner invoice access, independent of request browsing or request trash.
+      if (route === '/invoices' && request.method === 'GET') {
+        const view = url.searchParams.get('view') || 'new';
+        const before = url.searchParams.get('before') || '';
+        if (!['new','unpaid','paid','void'].includes(view) || (before && !idPattern.test(before))) fail(400, 'Invalid invoice filter.');
+        return json(await invoiceStore.list({ view, before, query:(url.searchParams.get('q') || '').trim().slice(0,120) }));
+      }
+      if (route === '/invoices/new' && request.method === 'GET') return json(invoiceStore.draft());
+      if (route === '/invoices' && request.method === 'POST') {
+        const saved = await invoiceStore.create(await jsonBody(request, 65536));
+        if (saved.conflict) fail(409, 'Please retry saving this invoice.');
+        return json(saved.invoice, 201);
+      }
+      const directInvoice = route.match(/^\/invoices\/(\d{13}-[0-9a-f-]{36})$/);
+      if (directInvoice && ['GET','PUT'].includes(request.method)) {
+        const invoice = await invoiceStore.read(directInvoice[1]);
+        if (!invoice) fail(404, 'Invoice not found.');
+        if (request.method === 'GET') return json(invoice);
+        const saved = await invoiceStore.save({ id:directInvoice[1] }, await jsonBody(request, 65536));
+        if (saved.conflict) fail(409, 'This invoice changed. Reload it before saving.');
+        return json(saved.invoice);
+      }
       // Owner invoice for a request: read (a fresh draft if none yet) and save.
       const invoiceMatch = route.match(/^\/requests\/(\d{13}-[0-9a-f-]{36})\/invoice$/);
       if (invoiceMatch && ['GET','PUT'].includes(request.method)) {

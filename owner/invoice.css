@@ -1,4 +1,13 @@
 /* Owner invoice editor (owner/invoice.js). The invoice itself is styled by ../invoice.css. */
+.owner-tabs{flex-wrap:wrap}.owner-tabs #sign-out{margin-left:auto}
+.invoice-filters{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0}
+.invoice-filters span{font-size:12px;opacity:.8}
+.invoice-list{margin-top:18px}
+.invoice-card{min-width:0;overflow-wrap:anywhere}
+.invoice-card h3{font-size:19px;margin:12px 0 6px}
+.invoice-card .invoice-vin{font:13px/1.5 monospace}
+.invoice-amounts{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;border-top:1px solid var(--line);margin-top:18px;padding-top:14px;font-size:14px}
+.invoice-amounts strong{color:var(--mint)}
 .invoice-dialog{width:min(900px,calc(100% - 16px));max-height:calc(100dvh - 16px);padding:20px}
 .inv-editor h2{margin:4px 0 14px}
 .inv-editor h3{font-size:13px;letter-spacing:1px;text-transform:uppercase;color:var(--mint);margin:20px 0 8px}
