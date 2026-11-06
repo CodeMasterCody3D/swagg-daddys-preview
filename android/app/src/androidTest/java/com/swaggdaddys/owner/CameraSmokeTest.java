@@ -51,8 +51,8 @@ public class CameraSmokeTest {
             +"import{vinWidget}from'https://swaggdaddys.com/vin-widget.js';import{createLiveVinScanner}from'https://swaggdaddys.com/vin-live.js';"
             +"const host=document.getElementById('host');host.innerHTML=vinWidget+\"<input id='vehicle' type='hidden'><div id='request-result' hidden></div>\";"
             +"mountVinScanner(host,{createScanner:options=>createLiveVinScanner({...options,prepare:()=>{},readFrame:async()=>({candidates:[]}),textAfterMisses:100000,lens:null})});"
-            +"host.querySelector('video').addEventListener('loadeddata',()=>{document.title='camera-ready'});document.title='scanner-ready';</script>";
-        activity.getScenario().onActivity(owner->findWeb(owner.getWindow().getDecorView()).loadDataWithBaseURL(NavigationPolicy.HOME,html,"text/html","UTF-8",null));
+            +"host.querySelector('video').addEventListener('playing',()=>{document.title='camera-ready'});document.title='scanner-ready';</script>";
+        activity.getScenario().onActivity(owner->findWeb(owner.getWindow().getDecorView()).loadDataWithBaseURL(NavigationPolicy.HOME,html,"text/html","UTF-8",NavigationPolicy.HOME));
         long deadline=System.currentTimeMillis()+45000;
         while(System.currentTimeMillis()<deadline&&!title().contains("scanner-ready"))Thread.sleep(100);
         assertTrue("Scanner fixture did not load",title().contains("scanner-ready"));
@@ -69,8 +69,8 @@ public class CameraSmokeTest {
             }
             Thread.sleep(100);
         }
-        AtomicReference<String> error=new AtomicReference<>("");CountDownLatch done=new CountDownLatch(1);
-        activity.getScenario().onActivity(owner->findWeb(owner.getWindow().getDecorView()).evaluateJavascript("document.getElementById('vin-live-status').textContent",value->{error.set(value);done.countDown();}));
-        done.await(5,TimeUnit.SECONDS);fail("Camera did not deliver frames: "+error.get());
+        AtomicReference<String> error=new AtomicReference<>(""), nativeState=new AtomicReference<>("");CountDownLatch done=new CountDownLatch(1);
+        activity.getScenario().onActivity(owner->{nativeState.set(owner.cameraDiagnostic()+"; Android permission="+owner.checkSelfPermission(android.Manifest.permission.CAMERA));findWeb(owner.getWindow().getDecorView()).evaluateJavascript("document.getElementById('vin-live-status').textContent",value->{error.set(value);done.countDown();});});
+        done.await(5,TimeUnit.SECONDS);fail("Camera did not deliver frames: "+error.get()+"; "+nativeState.get());
     }
 }

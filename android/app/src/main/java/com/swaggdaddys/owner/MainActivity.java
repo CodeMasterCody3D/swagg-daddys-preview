@@ -46,6 +46,9 @@ public final class MainActivity extends Activity {
     private static final int CAMERA_PERMISSION = 722;
     private static final int VIN_PHOTO = 723;
     private PermissionRequest pendingCamera;
+    private boolean cameraPreflight;
+    private String cameraDiagnostic = "No website camera request";
+    String cameraDiagnostic() { return cameraDiagnostic; }
     private ValueCallback<Uri[]> pendingPhoto;
     private GeolocationPermissions.Callback pendingLocation;
     private String pendingLocationOrigin;
@@ -141,7 +144,7 @@ public final class MainActivity extends Activity {
     private void configureWebView() {
         WebSettings settings = web.getSettings();
         settings.setUserAgentString(settings.getUserAgentString() + " SwaggDaddysOwner/"
-                + BuildConfig.VERSION_NAME + " (build:" + BuildConfig.VERSION_CODE + ")");
+                + BuildConfig.VERSION_NAME + " (build:" + BuildConfig.VERSION_CODE + ") SwaggDaddysCameraPreflight/1");
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(false);
@@ -154,7 +157,8 @@ public final class MainActivity extends Activity {
         settings.setGeolocationEnabled(true);
         settings.setSaveFormData(false);
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
-        settings.setMediaPlaybackRequiresUserGesture(true);
+        // The muted camera preview starts after asynchronous Android permission consent.
+        settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setSupportMultipleWindows(true);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
         CookieManager.getInstance().setAcceptCookie(true);
@@ -195,7 +199,10 @@ public final class MainActivity extends Activity {
 
         web.setWebChromeClient(new WebChromeClient() {
             @Override public void onPermissionRequest(PermissionRequest request) {
+                cameraDiagnostic = "Website request: " + request.getOrigin() + "; page: " + web.getUrl()
+                        + "; resources: " + java.util.Arrays.toString(request.getResources());
                 if (!CameraPolicy.allowed(request.getOrigin().toString(), web.getUrl(), request.getResources())) {
+                    cameraDiagnostic += "; rejected origin/resource policy";
                     request.deny(); return;
                 }
                 if (pendingCamera != null) pendingCamera.deny();
@@ -205,6 +212,7 @@ public final class MainActivity extends Activity {
                 } else requestPermissions(new String[]{android.Manifest.permission.CAMERA}, CAMERA_PERMISSION);
             }
             @Override public void onPermissionRequestCanceled(PermissionRequest request) {
+                cameraDiagnostic += "; website request cancelled";
                 if (pendingCamera == request) pendingCamera = null;
             }
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
@@ -331,6 +339,10 @@ public final class MainActivity extends Activity {
     }
 
     private boolean route(String url, boolean mainFrame, boolean userGesture) {
+        if (CameraPolicy.isPreflight(url, web.getUrl())) {
+            if (mainFrame) requestScannerCamera();
+            return true;
+        }
         if (UpdatePolicy.isApk(url)) {
             if (mainFrame && userGesture && updates != null && NavigationPolicy.classify(web.getUrl()) == NavigationPolicy.Route.INTERNAL) updates.start(url);
             return true;
@@ -387,7 +399,7 @@ public final class MainActivity extends Activity {
         if (updates != null) updates.pause();
         CookieManager.getInstance().flush();
         // A system camera-permission dialog must not hide/cancel its own WebView request.
-        if (web != null && pendingCamera == null) web.onPause();
+        if (web != null && pendingCamera == null && !cameraPreflight) web.onPause();
         super.onPause();
     }
 
@@ -398,6 +410,26 @@ public final class MainActivity extends Activity {
         if (updates != null) updates.resume();
     }
 
+    private void requestScannerCamera() {
+        if (cameraPreflight) return;
+        cameraPreflight = true;
+        cameraDiagnostic = "Native camera preflight";
+        if (checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            finishCameraPreflight();
+        } else requestPermissions(new String[]{android.Manifest.permission.CAMERA}, CAMERA_PERMISSION);
+    }
+
+    private void finishCameraPreflight() {
+        if (!cameraPreflight) return;
+        cameraPreflight = false;
+        boolean granted = checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        cameraDiagnostic += granted ? "; Android allowed" : "; Android denied";
+        if (!destroyed && web != null && NavigationPolicy.trustedOrigin(web.getUrl())) {
+            web.evaluateJavascript("window.dispatchEvent(new CustomEvent('swagg-camera-permission',{detail:"
+                    + granted + "}))", null);
+        }
+    }
+
     private void finishCameraRequest() {
         PermissionRequest request = pendingCamera;
         pendingCamera = null;
@@ -405,6 +437,7 @@ public final class MainActivity extends Activity {
         if (!destroyed && web != null
                 && checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
                 && CameraPolicy.allowed(request.getOrigin().toString(), web.getUrl(), request.getResources())) {
+            cameraDiagnostic += "; video granted";
             request.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
         } else request.deny();
     }
@@ -426,7 +459,7 @@ public final class MainActivity extends Activity {
     }
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
-        if (requestCode == CAMERA_PERMISSION) finishCameraRequest();
+        if (requestCode == CAMERA_PERMISSION) { finishCameraPreflight(); finishCameraRequest(); }
         if (requestCode == LOCATION_PERMISSION && pendingLocation != null) {
             pendingLocation.invoke(pendingLocationOrigin, locationGranted(), false);
             pendingLocation = null; pendingLocationOrigin = null;
@@ -443,6 +476,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         destroyed = true;
+        cameraPreflight = false;
         if (pendingCamera != null) { pendingCamera.deny(); pendingCamera = null; }
         if (pendingPhoto != null) { pendingPhoto.onReceiveValue(null); pendingPhoto = null; }
         if (push != null) push.destroy();

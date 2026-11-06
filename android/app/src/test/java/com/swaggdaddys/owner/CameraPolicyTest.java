@@ -14,4 +14,10 @@ public class CameraPolicyTest {
         assertFalse(CameraPolicy.allowed("https://swaggdaddys.com/", NavigationPolicy.HOME, new String[]{"android.webkit.resource.AUDIO_CAPTURE"}));
         assertFalse(CameraPolicy.allowed("https://swaggdaddys.com/", NavigationPolicy.HOME, null));
     }
+    @Test public void nativePermissionRouteIsExactAndSameOrigin() {
+        assertTrue(CameraPolicy.isPreflight("https://swaggdaddys.com/owner/native-camera", NavigationPolicy.HOME));
+        assertFalse(CameraPolicy.isPreflight("https://evil.example/owner/native-camera", NavigationPolicy.HOME));
+        assertFalse(CameraPolicy.isPreflight("https://www.swaggdaddys.com/owner/native-camera", NavigationPolicy.HOME));
+        assertFalse(CameraPolicy.isPreflight("https://swaggdaddys.com/owner/native-camera?next=evil", NavigationPolicy.HOME));
+    }
 }

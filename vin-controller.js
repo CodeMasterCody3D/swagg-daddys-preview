@@ -162,11 +162,28 @@ async function selectPhoto(event) {
 }
 liveScanner=createScanner({video:$('vin-live-video'),verify,lens:frame=>lensReady.then(ok=>ok?scanWithGoogle(frame,{api:lensApi}):null),onStarted:stream=>cameraControls.attach(stream),region:()=>cameraControls.region(),onSample:info=>{$('vin-live-progress').textContent='Camera: '+info.width+' × '+info.height+' · Frames sampled: '+info.samples+' · Barcode attempts: '+info.attempts+' · Local text checks: '+info.textAttempts;},onFrame:(result,{frames,samples,textAttempts})=>{if(result.diagnostics)showBarcodeCheck({...result.diagnostics,liveFrames:frames});$('vin-live-progress').textContent='Frames sampled: '+samples+' · Barcode attempts: '+frames+' · Local text checks: '+textAttempts;},onStatus:message=>setLiveStatus(message),onMatch:async(vin,result)=>{const run=cameraSession;setLiveStatus('Checking vehicle details…');$('vin-live-capture').disabled=true;showBarcodeCheck({...result.diagnostics,liveFrames:barcodeCheck?.liveFrames});const ok=await applyScannedVin(vin,{text:'live-text',lens:'google-lens'}[result.candidates?.[0]?.method]||'live-barcode');if(!ok&&run===cameraSession){liveUi(true);setLiveStatus(status.textContent,true);$('vin-live-retry').hidden=false;}},onError:error=>{liveUi(true);$('vin-photo-button').disabled=false;$('vin-live-capture').disabled=true;setLiveStatus('Try again. '+cameraErrorMessage(error),true);$('vin-live-retry').hidden=false;}});
 function setLiveStatus(message,error=false){$('vin-live-status').textContent=message;$('vin-live-status').classList.toggle('vin-error',error);}
+let cameraPermissionPending;
+function nativeCameraPermission() {
+  if(!navigator.userAgent.includes('SwaggDaddysCameraPreflight/1'))return Promise.resolve(true);
+  if(cameraPermissionPending)return cameraPermissionPending;
+  cameraPermissionPending=new Promise(resolve=>{
+    const finish=event=>{clearTimeout(timeout);window.removeEventListener('swagg-camera-permission',finish);resolve(event?.detail===true);};
+    const timeout=setTimeout(()=>finish(),60000);
+    window.addEventListener('swagg-camera-permission',finish);
+    // The native wrapper intercepts this exact same-origin route without leaving the page.
+    location.href=new URL('/owner/native-camera',location.href).href;
+  }).finally(()=>{cameraPermissionPending=null;});
+  return cameraPermissionPending;
+}
 async function open(){
   if(scanBusy)return;
+  const session=++cameraSession;
   clearPhoto();setStatus('');setLiveStatus('Opening camera…');$('vin-live-retry').hidden=true;scanSource.textContent='';showBarcodeCheck();$('vin-live-progress').textContent='Waiting for camera frames. Barcode first; local text checks start if needed.';liveUi(true);
   if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){$('vin-live-status').textContent='This browser cannot show an in-page camera here. Use the phone camera button below, choose a photo, or open this website in your phone’s browser.';return;}
   $('vin-photo-button').disabled=true;$('vin-live-capture').disabled=true;
+  const allowed=await nativeCameraPermission();
+  if(session!==cameraSession||!$('vin-live-tools').open)return;
+  if(!allowed){$('vin-photo-button').disabled=false;setLiveStatus('Camera permission was not granted. Allow Camera in Android app permissions, then try again.',true);$('vin-live-retry').hidden=false;return;}
   await liveScanner.start();if(liveScanner.active)$('vin-live-capture').disabled=false;
 }
 $('vin-photo-button').addEventListener('click',open);
