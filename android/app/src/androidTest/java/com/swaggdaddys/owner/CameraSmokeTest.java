@@ -40,6 +40,10 @@ public class CameraSmokeTest {
         }
     }
     @Test public void liveCameraRequestsAndroidPermissionAndReceivesFrames() throws Exception {
+        UiAutomation automation=InstrumentationRegistry.getInstrumentation().getUiAutomation();
+        android.accessibilityservice.AccessibilityServiceInfo info=automation.getServiceInfo();
+        info.flags |= android.accessibilityservice.AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
+        automation.setServiceInfo(info);
         // Exercise the shipped scanner and native permission bridge. Replace only the VIN readers
         // so the emulator frame never goes to Google or a vehicle lookup service.
         String html="<!doctype html><meta name='viewport' content='width=device-width'><title>loading</title><div id='host'></div>"
