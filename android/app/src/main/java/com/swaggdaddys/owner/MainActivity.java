@@ -386,7 +386,8 @@ public final class MainActivity extends Activity {
         if (push != null) push.pause();
         if (updates != null) updates.pause();
         CookieManager.getInstance().flush();
-        web.onPause();
+        // A system camera-permission dialog must not hide/cancel its own WebView request.
+        if (web != null && pendingCamera == null) web.onPause();
         super.onPause();
     }
 

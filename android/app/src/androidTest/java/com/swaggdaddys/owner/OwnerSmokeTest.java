@@ -50,7 +50,10 @@ public class OwnerSmokeTest {
                 String expected = "SwaggDaddysOwner/" + installed.versionName + " (build:" + installed.getLongVersionCode() + ")";
                 assertTrue(web.getSettings().getUserAgentString().contains(expected));
             } catch (android.content.pm.PackageManager.NameNotFoundException error) { throw new AssertionError(error); }
-            assertNull(OwnerUpdateController.validatePackage(owner, new java.io.File(owner.getApplicationInfo().sourceDir)));
+            java.io.File installedApk = new java.io.File(owner.getApplicationInfo().sourceDir);
+            assertNull(OwnerUpdateController.validatePackage(owner, installedApk));
+            assertTrue(OwnerUpdateController.installedVersionCoversDownload(owner, installedApk));
+            assertFalse(OwnerUpdateController.installedVersionCoversDownload(owner, new java.io.File("/missing.apk")));
             try {
                 String[] permissions = owner.getPackageManager().getPackageInfo(owner.getPackageName(), android.content.pm.PackageManager.GET_PERMISSIONS).requestedPermissions;
                 assertTrue(java.util.Arrays.asList(permissions).contains("android.permission.REQUEST_INSTALL_PACKAGES"));

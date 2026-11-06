@@ -17,4 +17,10 @@ public class UpdatePolicyTest {
                 APK.replace("/v1.0.4/", "/../v1.0.4/"), APK.replace(".apk", ".exe"),
                 APK.replace("Swagg-Daddys", "%2Fetc%2FSwagg-Daddys") }) assertFalse(String.valueOf(url), UpdatePolicy.isApk(url));
     }
+    @org.junit.Test public void installedDownloadsDoNotOfferAnotherUpdate() {
+        org.junit.Assert.assertTrue(UpdatePolicy.installedVersionCoversDownload(10, 10));
+        org.junit.Assert.assertTrue(UpdatePolicy.installedVersionCoversDownload(9, 10));
+        org.junit.Assert.assertFalse(UpdatePolicy.installedVersionCoversDownload(11, 10));
+        org.junit.Assert.assertFalse(UpdatePolicy.installedVersionCoversDownload(0, 10));
+    }
 }

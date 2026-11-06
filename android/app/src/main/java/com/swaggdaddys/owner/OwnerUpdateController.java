@@ -97,9 +97,16 @@ final class OwnerUpdateController {
             }
             int status = row.getInt(row.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
             if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                File file = localFile();
+                if (installedVersionCoversDownload(activity, file)) {
+                    closeDialog();
+                    state.edit().clear().apply();
+                    downloads.remove(id);
+                    if (force) Toast.makeText(activity, "This version is already installed. No update needed.", Toast.LENGTH_SHORT).show();
+                    return;
+                }
                 if (!force && announced == id) return;
                 announced = id;
-                File file = localFile();
                 String problem = validatePackage(activity, file);
                 if (problem != null) { message("Cannot install this APK", problem); return; }
                 closeDialog();
@@ -135,21 +142,34 @@ final class OwnerUpdateController {
     }
 
     @SuppressWarnings("deprecation")
-    static String validatePackage(Context context, File file) {
-        if (file == null || !file.isFile()) return "The download is no longer available. Download it again from Updates.";
+    private static long[] verifiedVersions(Context context, File file) throws Exception {
+        if (file == null || !file.isFile()) throw new IllegalArgumentException("The download is no longer available. Download it again from Updates.");
+        PackageManager pm = context.getPackageManager();
+        PackageInfo archive = pm.getPackageArchiveInfo(file.getAbsolutePath(), PackageManager.GET_SIGNATURES);
+        PackageInfo installed = pm.getPackageInfo(context.getPackageName(), PackageManager.GET_SIGNATURES);
+        if (archive == null || !context.getPackageName().equals(archive.packageName)) throw new IllegalArgumentException("This file is not the Swagg Daddys owner app.");
+        Set<Signature> actual = new HashSet<>(Arrays.asList(archive.signatures == null ? new Signature[0] : archive.signatures));
+        Set<Signature> expected = new HashSet<>(Arrays.asList(installed.signatures == null ? new Signature[0] : installed.signatures));
+        if (actual.isEmpty() || !actual.equals(expected)) throw new IllegalArgumentException("The APK signature does not match this installed app. Download an official release signed with the original key.");
+        long next = Build.VERSION.SDK_INT >= 28 ? archive.getLongVersionCode() : archive.versionCode;
+        long current = Build.VERSION.SDK_INT >= 28 ? installed.getLongVersionCode() : installed.versionCode;
+        return new long[]{next, current};
+    }
+
+    static boolean installedVersionCoversDownload(Context context, File file) {
         try {
-            PackageManager pm = context.getPackageManager();
-            PackageInfo archive = pm.getPackageArchiveInfo(file.getAbsolutePath(), PackageManager.GET_SIGNATURES);
-            PackageInfo installed = pm.getPackageInfo(context.getPackageName(), PackageManager.GET_SIGNATURES);
-            if (archive == null || !context.getPackageName().equals(archive.packageName)) return "This file is not the Swagg Daddys owner app.";
-            Set<Signature> actual = new HashSet<>(Arrays.asList(archive.signatures == null ? new Signature[0] : archive.signatures));
-            Set<Signature> expected = new HashSet<>(Arrays.asList(installed.signatures == null ? new Signature[0] : installed.signatures));
-            if (actual.isEmpty() || !actual.equals(expected)) return "The APK signature does not match this installed app. Download an official release signed with the original key.";
-            long next = Build.VERSION.SDK_INT >= 28 ? archive.getLongVersionCode() : archive.versionCode;
-            long current = Build.VERSION.SDK_INT >= 28 ? installed.getLongVersionCode() : installed.versionCode;
-            if (next < current) return "This APK is older than your installed app. Android cannot install it as an update. Your current app has been kept.";
+            long[] versions = verifiedVersions(context, file);
+            return UpdatePolicy.installedVersionCoversDownload(versions[0], versions[1]);
+        } catch (Exception ignored) { return false; }
+    }
+
+    static String validatePackage(Context context, File file) {
+        try {
+            long[] versions = verifiedVersions(context, file);
+            if (versions[0] < versions[1]) return "This APK is older than your installed app. Android cannot install it as an update. Your current app has been kept.";
             return null;
-        } catch (Exception error) { return "The APK could not be verified. Download it again from Updates."; }
+        } catch (IllegalArgumentException error) { return error.getMessage(); }
+        catch (Exception error) { return "The APK could not be verified. Download it again from Updates."; }
     }
 
     private void install() {

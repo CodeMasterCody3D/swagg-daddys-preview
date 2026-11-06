@@ -5,6 +5,9 @@ import java.net.URI;
 /** Public release assets only; never pass owner cookies to the download service. */
 public final class UpdatePolicy {
     private UpdatePolicy() { }
+    public static boolean installedVersionCoversDownload(long downloaded, long installed) {
+        return downloaded > 0 && installed > 0 && downloaded <= installed;
+    }
     public static boolean isApk(String value) {
         if (value == null || value.contains("..")) return false;
         try {

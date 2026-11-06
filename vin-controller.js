@@ -182,7 +182,7 @@ $('vin-live-capture').addEventListener('click',async()=>{
   catch(error){$('vin-live-status').textContent=cameraErrorMessage(error);}
 });
 $('vin-upload-button').addEventListener('click',()=>{stopLive();$('vin-upload').click();});
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&$('vin-live-tools').open)cancelScan('Camera stopped while the page was away. Tap Live scan VIN to start again.');});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&$('vin-live-tools').open&&liveScanner.stream)cancelScan('Camera stopped while the page was away. Tap Live scan VIN to start again.');});
 window.addEventListener('pagehide',()=>cancelScan(''));
 form?.addEventListener('submit',()=>cancelScan(''));
 $('vin-photo').addEventListener('change',selectPhoto);$('vin-upload').addEventListener('change',selectPhoto);
